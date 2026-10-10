@@ -69,8 +69,10 @@ export function memoryTransport(): [Transport, Transport] {
   function makeSide(own: Map<string, HandlerSet>, peer: Map<string, HandlerSet>): Transport {
     return {
       send(ch, data) {
-        const set = peer.get(ch);
-        if (set) for (const fn of set) queueMicrotask(() => fn(data as never));
+        const peerSet = peer.get(ch);
+        if (peerSet) for (const fn of peerSet) queueMicrotask(() => fn(data as never));
+        const ownSet = own.get(ch);
+        if (ownSet) for (const fn of ownSet) queueMicrotask(() => fn(data as never));
       },
       on(ch, handler) {
         let set = own.get(ch);
