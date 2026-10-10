@@ -87,3 +87,22 @@ export interface Telemetry {
   session: string; system: 'mouse'|'naive'|'handsfree'; task: string; level: 0|1|2; trial: number;
   event: string; ts: number; target?: string; correct?: boolean; extra?: Record<string, unknown>;
 }
+
+// ---------- Settings bus messages (P3 <-> P4 settings UI) ----------
+export interface SettingsGet { t: 'settings.get' }
+export interface SettingsSet { t: 'settings.set'; patch: Record<string, unknown> }
+export interface SettingsState { t: 'settings.state'; values: Record<string, unknown> }
+export type SettingsMessage = SettingsGet | SettingsSet | SettingsState;
+
+// ---------- Tab commands (side panel -> background SW) ----------
+export type TabCommandName =
+  | 'back' | 'forward' | 'reload' | 'home'
+  | 'new_tab' | 'close_tab' | 'next_tab' | 'prev_tab' | 'tab_n' | 'go_to'
+  | 'default_search';
+export interface TabCommand {
+  t: 'tab.command';
+  name: TabCommandName;
+  n?: number;    // for tab_n
+  url?: string;  // for go_to
+  query?: string; // for default_search
+}
