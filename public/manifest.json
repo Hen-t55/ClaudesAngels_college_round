@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Handsfree",
+  "version": "0.1.0",
+  "description": "Browse any site with head movement and voice — no mouse or keyboard.",
+  "permissions": ["tabs", "storage", "scripting", "sidePanel", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "Open Handsfree"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "all_frames": true,
+      "js": ["content.js"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["mediapipe/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

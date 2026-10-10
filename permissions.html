@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Handsfree — Permissions</title>
+  <style>
+    body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #111; color: #eee; }
+    .card { max-width: 420px; text-align: center; }
+    h1 { font-size: 1.5rem; margin-bottom: .5rem; }
+    p { color: #aaa; line-height: 1.5; }
+    button { margin-top: 1rem; padding: .6rem 1.6rem; font-size: 1rem; border: none; border-radius: 8px; background: #3b82f6; color: #fff; cursor: pointer; }
+    button:hover { background: #2563eb; }
+    .ok { color: #22c55e; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Handsfree Setup</h1>
+    <p>We need camera access for head tracking and microphone access for voice commands. All processing stays on your device.</p>
+    <button id="grant">Grant Camera &amp; Microphone</button>
+    <p id="status"></p>
+  </div>
+  <script>
+    document.getElementById('grant').addEventListener('click', async () => {
+      const status = document.getElementById('status');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        stream.getTracks().forEach(t => t.stop());
+        status.textContent = '✓ Permissions granted! You can close this tab and open the side panel from the toolbar.';
+        status.className = 'ok';
+        document.getElementById('grant').disabled = true;
+      } catch (e) {
+        status.textContent = '✗ Permission denied. Please allow camera and microphone and try again.';
+        status.style.color = '#ef4444';
+      }
+    });
+  </script>
+</body>
+</html>
