@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Handsfree Demo: Multi-Field Form</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      padding: 30px 20px;
+    }
+    .container { max-width: 680px; margin: 0 auto; }
+    header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 16px;
+    }
+    h1 { font-size: 24px; font-weight: 800; }
+    .back { color: #2563eb; text-decoration: none; font-weight: 600; font-size: 14px; }
+    .info-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: #1e40af;
+    }
+    .form-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    .form-group {
+      margin-bottom: 18px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #334155;
+    }
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+    .radio-group, .checkbox-group {
+      display: flex;
+      gap: 18px;
+      margin-top: 6px;
+    }
+    .choice-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      background: #2563eb;
+      color: #fff;
+      margin-top: 10px;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .status-alert {
+      display: none;
+      background: #dcfce7;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-top: 16px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📝 Multi-Field Form Test</h1>
+      <a href="index.html" class="back">&larr; Back to Portal</a>
+    </header>
+
+    <div class="info-box">
+      <strong>Handsfree Evaluation Context:</strong> Tests field focusing and voice typing:
+      <br>&bull; <em>"type Alice in First Name"</em>
+      <br>&bull; <em>"focus Email" &rarr; dictation mode &rarr; "alice at example dot com"</em>
+      <br>&bull; <em>"select Premium" &bull; "check terms" &bull; "click Submit Application"</em>
+    </div>
+
+    <form class="form-card" id="test-form" onsubmit="handleSubmit(event)">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+        <div class="form-group">
+          <label for="first-name">First Name</label>
+          <input type="text" id="first-name" name="firstName" placeholder="e.g. Jane" required>
+        </div>
+        <div class="form-group">
+          <label for="last-name">Last Name</label>
+          <input type="text" id="last-name" name="lastName" placeholder="e.g. Doe" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="email-address">Email Address</label>
+        <input type="email" id="email-address" name="email" placeholder="jane@example.com" required>
+      </div>
+
+      <div class="form-group">
+        <label for="country-select">Country</label>
+        <select id="country-select" name="country">
+          <option value="us">United States</option>
+          <option value="ca">Canada</option>
+          <option value="uk">United Kingdom</option>
+          <option value="in">India</option>
+          <option value="au">Australia</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Account Tier</label>
+        <div class="radio-group">
+          <label class="choice-label">
+            <input type="radio" name="tier" value="free" checked> Free Tier
+          </label>
+          <label class="choice-label">
+            <input type="radio" name="tier" value="pro"> Pro Tier
+          </label>
+          <label class="choice-label">
+            <input type="radio" name="tier" value="enterprise"> Enterprise
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="notes-area">Additional Notes / Bio</label>
+        <textarea id="notes-area" name="notes" rows="3" placeholder="Dictate personal bio or notes here..."></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="choice-label">
+          <input type="checkbox" id="terms-box" name="terms" required> I agree to terms and privacy conditions
+        </label>
+      </div>
+
+      <button type="submit" class="btn" id="submit-btn">Submit Application</button>
+
+      <div id="status" class="status-alert">
+        🎉 Form successfully submitted! All field values validated.
+      </div>
+    </form>
+  </div>
+
+  <script>
+    function handleSubmit(e) {
+      e.preventDefault();
+      const status = document.getElementById('status');
+      status.style.display = 'block';
+    }
+  </script>
+</body>
+</html>

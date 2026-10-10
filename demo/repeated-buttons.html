@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Handsfree Demo: Repeated Identical Buttons</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      padding: 30px 20px;
+    }
+    .container { max-width: 1000px; margin: 0 auto; }
+    header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 16px;
+    }
+    h1 { font-size: 24px; font-weight: 800; }
+    .back { color: #2563eb; text-decoration: none; font-weight: 600; font-size: 14px; }
+    .info-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: #1e40af;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-bottom: 30px;
+    }
+    .item-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .item-details h3 { font-size: 16px; margin-bottom: 4px; }
+    .item-details p { color: #64748b; font-size: 13px; }
+    .btn-group { display: flex; gap: 8px; }
+    .btn {
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+    }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-danger { background: #fee2e2; color: #dc2626; border-color: #fecaca; }
+    .btn-danger:hover { background: #fca5a5; }
+    .log-box {
+      background: #0f172a;
+      color: #38bdf8;
+      border-radius: 8px;
+      padding: 16px;
+      font-family: monospace;
+      font-size: 13px;
+      min-height: 100px;
+      max-height: 160px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🔁 Repeated Identical Buttons Test</h1>
+      <a href="index.html" class="back">&larr; Back to Portal</a>
+    </header>
+
+    <div class="info-box">
+      <strong>Handsfree Evaluation Context:</strong> Each card contains identical "Add to Cart" and "Delete" buttons.
+      <br>1. <em>Without Quadrants:</em> Saying "click add to cart" matches 8 targets across the whole screen.
+      <br>2. <em>With Quadrants:</em> Look at Top-Left (TL) to narrow candidates to 2, then use the <strong>2-gear shifter</strong> (Hop flicks or Voice badge numbers) to trigger.
+    </div>
+
+    <div class="grid">
+      <!-- Quadrant TL Items -->
+      <div class="item-card" data-quadrant="TL">
+        <div class="item-details">
+          <h3>Item Alpha (TL-1)</h3>
+          <p>$24.99 • Category A</p>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="logAction('Item Alpha (TL-1)', 'Add to Cart')">Add to Cart</button>
+          <button class="btn btn-danger" onclick="logAction('Item Alpha (TL-1)', 'Delete')">Delete</button>
+        </div>
+      </div>
+
+      <!-- Quadrant TR Items -->
+      <div class="item-card" data-quadrant="TR">
+        <div class="item-details">
+          <h3>Item Beta (TR-1)</h3>
+          <p>$39.99 • Category B</p>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="logAction('Item Beta (TR-1)', 'Add to Cart')">Add to Cart</button>
+          <button class="btn btn-danger" onclick="logAction('Item Beta (TR-1)', 'Delete')">Delete</button>
+        </div>
+      </div>
+
+      <div class="item-card" data-quadrant="TL">
+        <div class="item-details">
+          <h3>Item Gamma (TL-2)</h3>
+          <p>$18.50 • Category A</p>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="logAction('Item Gamma (TL-2)', 'Add to Cart')">Add to Cart</button>
+          <button class="btn btn-danger" onclick="logAction('Item Gamma (TL-2)', 'Delete')">Delete</button>
+        </div>
+      </div>
+
+      <div class="item-card" data-quadrant="TR">
+        <div class="item-details">
+          <h3>Item Delta (TR-2)</h3>
+          <p>$89.00 • Category B</p>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="logAction('Item Delta (TR-2)', 'Add to Cart')">Add to Cart</button>
+          <button class="btn btn-danger" onclick="logAction('Item Delta (TR-2)', 'Delete')">Delete</button>
+        </div>
+      </div>
+
+      <!-- Quadrant BL Items -->
+      <div class="item-card" data-quadrant="BL">
+        <div class="item-details">
+          <h3>Item Epsilon (BL-1)</h3>
+          <p>$12.00 • Category C</p>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="logAction('Item Epsilon (BL-1)', 'Add to Cart')">Add to Cart</button>
+          <button class="btn btn-danger" onclick="logAction('Item Epsilon (BL-1)', 'Delete')">Delete</button>
+        </div>
+      </div>
+
+      <!-- Quadrant BR Items -->
+      <div class="item-card" data-quadrant="BR">
+        <div class="item-details">
+          <h3>Item Zeta (BR-1)</h3>
+          <p>$45.00 • Category D</p>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="logAction('Item Zeta (BR-1)', 'Add to Cart')">Add to Cart</button>
+          <button class="btn btn-danger" onclick="logAction('Item Zeta (BR-1)', 'Delete')">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <h2 style="font-size: 16px; margin-bottom: 8px;">Action Event Log:</h2>
+    <div id="log" class="log-box">Ready. Click or trigger buttons with voice/head.</div>
+  </div>
+
+  <script>
+    function logAction(item, action) {
+      const log = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      const line = `[${time}] SUCCESS: Triggered "${action}" on ${item}`;
+      log.innerHTML = line + '<br>' + log.innerHTML;
+    }
+  </script>
+</body>
+</html>

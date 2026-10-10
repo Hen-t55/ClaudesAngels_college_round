@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Handsfree Demo: Stacked Layouts & Drawers</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 30px 20px;
+    }
+    .container { max-width: 900px; margin: 0 auto; position: relative; }
+    header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #cbd5e1;
+      padding-bottom: 16px;
+    }
+    h1 { font-size: 24px; font-weight: 800; }
+    .back { color: #2563eb; text-decoration: none; font-weight: 600; font-size: 14px; }
+    .info-box {
+      background: #e2e8f0;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: #334155;
+    }
+    .stack-parent {
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      position: relative;
+    }
+    .stack-child {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 14px;
+    }
+    .accordion-item {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .accordion-header {
+      background: #f8fafc;
+      padding: 14px 18px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      user-select: none;
+    }
+    .accordion-body {
+      padding: 16px 18px;
+      background: #fff;
+      display: none;
+    }
+    .accordion-body.open { display: block; }
+    .floating-drawer {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: #0f172a;
+      color: #fff;
+      border-radius: 10px;
+      padding: 16px 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      z-index: 999;
+    }
+    .btn {
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+    }
+    .btn-blue { background: #2563eb; color: #fff; border: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📚 Stacked Layouts & Drawers Test</h1>
+      <a href="index.html" class="back">&larr; Back to Portal</a>
+    </header>
+
+    <div class="info-box">
+      <strong>Handsfree Evaluation Context:</strong> Tests resolution across overlapping z-index layers, nested container rects, accordion toggles, and fixed-position floating drawers.
+    </div>
+
+    <!-- Nested Stack Level 1 -->
+    <div class="stack-parent">
+      <h2>Outer Card (Level 1)</h2>
+      <p style="color: #64748b; font-size: 14px; margin: 4px 0 12px 0;">Contains nested elements with deep hierarchy.</p>
+      <button class="btn btn-blue" onclick="alert('Clicked Level 1 Outer Action')">Outer Action Button</button>
+
+      <!-- Nested Stack Level 2 -->
+      <div class="stack-child">
+        <h3>Nested Container (Level 2)</h3>
+        <p style="color: #64748b; font-size: 13px; margin-bottom: 10px;">Sub-card nested within outer card.</p>
+        <button class="btn" onclick="alert('Clicked Level 2 Inner Action')">Inner Action Button</button>
+
+        <!-- Nested Stack Level 3 -->
+        <div style="background: #e2e8f0; border-radius: 6px; padding: 12px; margin-top: 12px;">
+          <h4 style="font-size: 13px;">Deep Leaf Target (Level 3)</h4>
+          <a href="#" style="color: #2563eb; font-weight: 600; font-size: 13px;" onclick="alert('Clicked Deep Hyperlink'); return false;">Deep Hyperlink Target</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Accordion Section -->
+    <h2 style="font-size: 18px; margin-bottom: 12px;">Collapsible Accordions</h2>
+    <div class="accordion-item">
+      <div class="accordion-header" onclick="toggleAcc('acc1')">
+        <span>Section A: Security Settings</span>
+        <span id="acc1-icon">&darr;</span>
+      </div>
+      <div id="acc1" class="accordion-body open">
+        <p style="font-size: 14px; margin-bottom: 10px;">Expanded content area with nested interactive controls.</p>
+        <button class="btn btn-blue" onclick="alert('Two-Factor Enabled')">Enable 2FA</button>
+      </div>
+    </div>
+
+    <div class="accordion-item">
+      <div class="accordion-header" onclick="toggleAcc('acc2')">
+        <span>Section B: Privacy Preferences</span>
+        <span id="acc2-icon">&rarr;</span>
+      </div>
+      <div id="acc2" class="accordion-body">
+        <p style="font-size: 14px; margin-bottom: 10px;">Hidden initially. Open via speech to reveal button.</p>
+        <button class="btn" onclick="alert('Cookie Settings Saved')">Save Cookie Preferences</button>
+      </div>
+    </div>
+
+    <!-- Fixed Floating Drawer -->
+    <div class="floating-drawer">
+      <div>
+        <strong style="font-size: 14px;">Floating Quick Drawer</strong>
+        <p style="font-size: 12px; color: #94a3b8;">Fixed position z-index 999</p>
+      </div>
+      <button class="btn btn-blue" onclick="alert('Floating Drawer Action Clicked')">Quick Action</button>
+    </div>
+  </div>
+
+  <script>
+    function toggleAcc(id) {
+      const el = document.getElementById(id);
+      el.classList.toggle('open');
+      const icon = document.getElementById(id + '-icon');
+      icon.innerHTML = el.classList.contains('open') ? '&darr;' : '&rarr;';
+    }
+  </script>
+</body>
+</html>
