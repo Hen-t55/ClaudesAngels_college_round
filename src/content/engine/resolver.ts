@@ -2,6 +2,7 @@ import Fuse from 'fuse.js';
 import type { TargetQuery, Scope, Verb, Important } from '../../shared/contract';
 import type { IndexedElement } from './types';
 import { normalizeLabel } from './label-extractor';
+import { extractColorBucket } from './color';
 
 export interface ScoredCandidate {
   item: IndexedElement;
