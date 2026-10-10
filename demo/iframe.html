@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Handsfree Demo: Same-Origin Iframe</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      padding: 30px 20px;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 16px;
+    }
+    h1 { font-size: 24px; font-weight: 800; }
+    .back { color: #2563eb; text-decoration: none; font-weight: 600; font-size: 14px; }
+    .info-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: #1e40af;
+    }
+    .parent-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    iframe {
+      width: 100%;
+      height: 220px;
+      border: 2px dashed #93c5fd;
+      border-radius: 8px;
+      margin-top: 14px;
+      background: #f8fafc;
+    }
+    .log-box {
+      background: #0f172a;
+      color: #38bdf8;
+      border-radius: 8px;
+      padding: 16px;
+      font-family: monospace;
+      font-size: 13px;
+      min-height: 80px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🖼️ Same-Origin Iframe Test</h1>
+      <a href="index.html" class="back">&larr; Back to Portal</a>
+    </header>
+
+    <div class="info-box">
+      <strong>Handsfree Evaluation Context:</strong> Demonstrates resolving target elements inside an embedded same-origin <code>&lt;iframe&gt;</code> container.
+    </div>
+
+    <div class="parent-card">
+      <h2>Parent Document Area</h2>
+      <p style="color: #64748b; font-size: 14px; margin: 6px 0 16px 0;">This button exists in the top-level parent window:</p>
+      <button style="padding: 9px 16px; background: #2563eb; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;" onclick="logMsg('Clicked Parent Window Button')">
+        Parent Window Button
+      </button>
+
+      <h3 style="font-size: 16px; margin-top: 24px;">Embedded Same-Origin Iframe Frame:</h3>
+      <iframe src="iframe-content.html" title="Same Origin Test Frame"></iframe>
+    </div>
+
+    <h2 style="font-size: 16px; margin-bottom: 8px;">Activity Log:</h2>
+    <div id="log" class="log-box">Ready for parent and iframe interaction...</div>
+  </div>
+
+  <script>
+    function logMsg(msg) {
+      const log = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      log.innerHTML = `[${time}] ${msg}<br>` + log.innerHTML;
+    }
+
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'iframe-clicked') {
+        logMsg('Received PostMessage from iframe: "Iframe Action Button" triggered!');
+      }
+    });
+  </script>
+</body>
+</html>
