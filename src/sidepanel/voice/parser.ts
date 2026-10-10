@@ -231,6 +231,7 @@ export function parseIntent(raw: string, options: { mode?: 'command' | 'dictatio
   if (text === 'start dictation' || text === 'dictate' || text === 'begin dictation') return { k: 'control', name: 'dictate_start' };
   if (text === 'stop dictation' || text === 'end dictation') return { k: 'control', name: 'dictate_stop' };
   if (text === 'recenter' || text === 'center head') return { k: 'control', name: 'recenter' };
+  if (text === 'start setup' || text === 'setup' || text === 'calibrate') return { k: 'control', name: 'recenter' };
   if (text === 'help' || text === 'show help' || text === 'what can i say') return { k: 'control', name: 'help' };
 
   // 3. Global navigation commands

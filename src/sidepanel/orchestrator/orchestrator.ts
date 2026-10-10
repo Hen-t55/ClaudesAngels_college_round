@@ -47,6 +47,7 @@ export class Orchestrator {
   private pendingConfirm?: { actionId: string; info: Important };
   private confirmTimer: ReturnType<typeof setTimeout> | null = null;
   private confirmTimeoutMs: number;
+  private isWidenedScope = false;
 
   // Settings
   private settings: HandsfreeSettings = {
@@ -194,6 +195,17 @@ export class Orchestrator {
 
       case 'head.quality':
         this.autoShiftFromHeadQuality(ev);
+        break;
+
+      case 'head.setup':
+        if (ev.step === 'done') {
+          this.banner = { kind: 'info', text: 'Calibration complete!' };
+          this.rearmToAiming();
+        } else {
+          this.phase = 'SETUP';
+          this.banner = { kind: 'info', text: `Setup: ${ev.prompt} (${Math.round(ev.progress * 100)}%)` };
+          this.broadcast();
+        }
         break;
     }
   }
@@ -467,6 +479,7 @@ export class Orchestrator {
   // =========================================================
   private startResolving(intent: Extract<Intent, { k: 'target' }>): void {
     this.phase = 'RESOLVING';
+    this.isWidenedScope = !this.quadrant;
     this.pendingTargetAction = { verb: intent.verb, query: intent.query };
     const reqId = `res_${++this.currentRequestId}`;
     const scope: Scope = this.quadrant ? { k: 'quadrant', q: this.quadrant } : { k: 'page' };
@@ -514,7 +527,8 @@ export class Orchestrator {
   }
 
   private handleFallbackLadder(widened = false): void {
-    if (!widened && this.quadrant) {
+    if (!widened && !this.isWidenedScope && this.quadrant) {
+      this.isWidenedScope = true;
       this.telemetry.recordFallback('widen');
       this.banner = { kind: 'info', text: 'No match in quadrant — widening to page…' };
       this.broadcast();
@@ -633,6 +647,7 @@ export class Orchestrator {
 
   private rearmToAiming(): void {
     this.quadrantLocked = false;
+    this.isWidenedScope = false;
     this.phase = this.quadrant ? 'AIMING' : 'IDLE';
     this.matches = [];
     this.showNumbers = false;

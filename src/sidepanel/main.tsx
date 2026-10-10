@@ -48,6 +48,30 @@ loadSettings().then((settings) => {
     }
   });
 
+  // Demo Mode toggle helper (Ctrl+Shift+D or Alt+D)
+  const toggleDemoMode = () => {
+    const isNowActive = !visionHandle.isSimulatorActive();
+    visionHandle.setSimulatorActive(isNowActive);
+    transport.send('settings', { t: 'settings.set', patch: { simulatorEnabled: isNowActive } });
+    transport.send('overlay', {
+      ...orchestrator.getOverlayState(),
+      banner: {
+        kind: isNowActive ? 'info' : 'confirm',
+        text: isNowActive
+          ? '🎮 Demo Mode ACTIVE: Keyboard Simulator ON (Q/E/Z/C quadrants, Arrows flick, N nod, X shake, L look-away)'
+          : '🎮 Demo Mode DISABLED: Head tracking restored',
+        timeoutMs: 4000,
+      },
+    });
+  };
+
+  window.addEventListener('keydown', (e: KeyboardEvent) => {
+    if ((e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'd') || (e.altKey && e.key.toLowerCase() === 'd')) {
+      e.preventDefault();
+      toggleDemoMode();
+    }
+  });
+
   // Mount sidepanel App
   const root = createRoot(document.getElementById('root')!);
   root.render(
@@ -58,6 +82,6 @@ loadSettings().then((settings) => {
 
   // Expose for manual console testing
   if (typeof window !== 'undefined') {
-    (window as any).__handsfree = { transport, visionHandle, speechModule, orchestrator };
+    (window as any).__handsfree = { transport, visionHandle, speechModule, orchestrator, toggleDemoMode };
   }
 });

@@ -532,7 +532,6 @@ export class Engine {
 
     // ContentEditable handling
     if (target.isContentEditable) {
-      this.undoTarget = null;
       if (mode === 'fill') {
         target.textContent = text;
       } else {
