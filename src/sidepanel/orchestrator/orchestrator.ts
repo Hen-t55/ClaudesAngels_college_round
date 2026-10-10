@@ -17,6 +17,7 @@ import type {
   EngineRequest,
   EngineEvent,
 } from '../../shared/contract';
+import { parseIntent, isSafeInterimGlobal } from '../voice';
 
 export interface OrchestratorDeps {
   transport: Transport;
@@ -209,7 +210,15 @@ export class Orchestrator {
       case 'speech.result':
         this.transcript = ev.text;
         if (ev.final) {
-          // Handled via handleIntent or orchestrator dispatcher
+          const intent = parseIntent(ev.text, { mode: this.phase === 'DICTATION' ? 'dictation' : 'command' });
+          if (intent) {
+            this.handleIntent(intent);
+          }
+        } else if (isSafeInterimGlobal(ev.text)) {
+          const interimIntent = parseIntent(ev.text, { mode: 'command' });
+          if (interimIntent) {
+            this.handleIntent(interimIntent);
+          }
         }
         this.broadcast();
         break;
