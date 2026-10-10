@@ -407,4 +407,54 @@ describe('SpeechModule Simulation & Lifecycle', () => {
       final: true,
     });
   });
+
+  it('auto-restarts speech recognition after silence (onend event)', () => {
+    vi.useFakeTimers();
+
+    let startCount = 0;
+    let stopCount = 0;
+    let mockInstance: any = null;
+
+    class MockSpeechRecognition {
+      continuous = false;
+      interimResults = false;
+      lang = 'en-IN';
+      onstart: (() => void) | null = null;
+      onend: (() => void) | null = null;
+      onerror: ((e: any) => void) | null = null;
+      onresult: ((e: any) => void) | null = null;
+
+      start() {
+        startCount++;
+        mockInstance = this;
+        setTimeout(() => this.onstart?.(), 10);
+      }
+      stop() {
+        stopCount++;
+      }
+      abort() {}
+    }
+
+    (window as any).webkitSpeechRecognition = MockSpeechRecognition;
+
+    const [t1] = memoryTransport();
+    const speechMod = new SpeechModule(t1);
+
+    speechMod.start();
+    expect(startCount).toBe(1);
+
+    // Simulate Chrome terminating recognition after silence
+    mockInstance.onend?.();
+
+    // Advance clock past backoff delay (250ms)
+    vi.advanceTimersByTime(300);
+
+    // auto-restart should have triggered another start()
+    expect(startCount).toBe(2);
+
+    speechMod.stop();
+    delete (window as any).webkitSpeechRecognition;
+    vi.useRealTimers();
+  });
 });
+
