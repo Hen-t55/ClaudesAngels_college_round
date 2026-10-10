@@ -61,8 +61,8 @@ export class TelemetryEmitter {
   }
 
   // ---- Event row emitters ----
-  recordActivation(target: string, correct?: boolean): void {
-    this.emit('activation', target, correct);
+  recordActivation(target: string, correct?: boolean, extra?: Record<string, unknown>): void {
+    this.emit('activation', target, correct, extra);
     this.log({ ts: Date.now(), event: 'activation', target, ok: correct });
   }
 

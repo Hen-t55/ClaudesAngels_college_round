@@ -45,7 +45,8 @@ export type Intent =
 export type SpeechEvent =
   | { t: 'speech.onset' }                                       // first audio/interim of an utterance -> lock quadrant
   | { t: 'speech.result'; text: string; final: boolean; confidence: number }
-  | { t: 'speech.level'; noiseFloor: number; level: number };
+  | { t: 'speech.level'; noiseFloor: number; level: number }
+  | { t: 'speech.error'; error: 'not-allowed' | 'audio-capture' | 'network' | 'no-speech' | 'service-not-allowed' | string; message?: string };
 
 // ---------- Engine (orchestrator <-> content script, P2) ----------
 export type Scope = { k: 'quadrant'; q: Quadrant } | { k: 'page' } | { k: 'rect'; rect: Rect };

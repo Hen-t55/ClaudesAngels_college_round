@@ -48,6 +48,13 @@ export class Orchestrator {
   private confirmTimer: ReturnType<typeof setTimeout> | null = null;
   private confirmTimeoutMs: number;
   private isWidenedScope = false;
+  private engineTimer: ReturnType<typeof setTimeout> | null = null;
+  private engineTimeoutMs = 1500; // 1.5s recovery timeout if engine is silent
+
+  // Latency benchmark metrics
+  private speechFinalTs = 0;
+  private lastSpeechToActionLatency = 0;
+  private lastQuadrantLatency = 0;
 
   // Settings
   private settings: HandsfreeSettings = {
@@ -96,6 +103,12 @@ export class Orchestrator {
   public getPhase(): Phase { return this.phase; }
   public getGear(): Gear  { return this.gear; }
   public getLog() { return this.telemetry.getLog(); }
+  public getLatencyMetrics() {
+    return {
+      speechToActionMs: this.lastSpeechToActionLatency,
+      quadrantHighlightMs: this.lastQuadrantLatency,
+    };
+  }
 
   public getOverlayState(): OverlayState {
     return {
@@ -122,6 +135,7 @@ export class Orchestrator {
 
   public stop(): void {
     if (this.confirmTimer) { clearTimeout(this.confirmTimer); this.confirmTimer = null; }
+    if (this.engineTimer) { clearTimeout(this.engineTimer); this.engineTimer = null; }
     for (const unbind of this.unbinds) unbind();
     this.unbinds = [];
   }
@@ -160,10 +174,12 @@ export class Orchestrator {
 
       case 'head.quadrant':
         if (!this.quadrantLocked && this.phase !== 'PAUSED') {
+          const t0 = performance.now();
           this.quadrant = ev.q;
           if (ev.q && this.phase === 'IDLE')         this.phase = 'AIMING';
           else if (!ev.q && this.phase === 'AIMING') this.phase = 'IDLE';
           this.broadcast();
+          this.lastQuadrantLatency = performance.now() - t0;
         }
         break;
 
@@ -310,6 +326,7 @@ export class Orchestrator {
       case 'speech.result':
         this.transcript = ev.text;
         if (ev.final) {
+          this.speechFinalTs = Date.now();
           this.updateSpeechQuality(ev.confidence);
           const intent = parseIntent(ev.text, { mode: this.phase === 'DICTATION' ? 'dictation' : 'command' });
           if (intent) this.handleIntent(intent);
@@ -322,6 +339,25 @@ export class Orchestrator {
 
       case 'speech.level':
         this.updateSpeechQuality(this.lastSpeechConfidence, ev.noiseFloor, ev.level);
+        break;
+
+      case 'speech.error':
+        if (ev.error === 'not-allowed' || ev.error === 'audio-capture' || ev.error === 'service-not-allowed' || ev.error === 'network') {
+          const reason = ev.error === 'not-allowed'
+            ? 'Microphone permission denied. Switched to Hop gear + Simulator/Type fallback.'
+            : ev.error === 'audio-capture'
+            ? 'Microphone busy or unavailable. Switched to Hop gear.'
+            : 'Speech service offline/unavailable. Switched to Hop gear.';
+
+          this.manualGearPinned = false; // allow gear fallback
+          this.setGear('hop', reason);
+          this.banner = {
+            kind: 'error',
+            text: `⚠️ Voice unavailable (${ev.error}): ${reason}`,
+            timeoutMs: 6000,
+          };
+          this.rearmToAiming();
+        }
         break;
     }
   }
@@ -485,9 +521,32 @@ export class Orchestrator {
     const scope: Scope = this.quadrant ? { k: 'quadrant', q: this.quadrant } : { k: 'page' };
     this.transport.send('engine.request', { t: 'engine.resolve', id: reqId, verb: intent.verb, query: intent.query, scope });
     this.broadcast();
+
+    // Start engine response recovery watchdog
+    if (this.engineTimer) clearTimeout(this.engineTimer);
+    this.engineTimer = setTimeout(() => {
+      this.handleEngineTimeout('Content script not responding or unavailable on this page');
+    }, this.engineTimeoutMs);
+  }
+
+  private handleEngineTimeout(reason: string): void {
+    if (this.phase === 'RESOLVING') {
+      this.rearmToAiming();
+      this.banner = {
+        kind: 'error',
+        text: `⚠️ Page unavailable: ${reason}. Check if this is a restricted chrome:// page.`,
+        timeoutMs: 4000,
+      };
+      this.broadcast();
+    }
   }
 
   private handleEngineEvent(ev: EngineEvent): void {
+    if (this.engineTimer) {
+      clearTimeout(this.engineTimer);
+      this.engineTimer = null;
+    }
+
     switch (ev.t) {
       case 'engine.result':    this.handleResolveResult(ev);  break;
       case 'engine.confirmNeeded': this.askConfirmation(ev.actionId, ev.info); break;
@@ -569,10 +628,15 @@ export class Orchestrator {
 
   private activateMatch(match: MatchMeta): void {
     const verb = this.pendingTargetAction?.verb || 'click';
+    if (this.speechFinalTs > 0) {
+      this.lastSpeechToActionLatency = Date.now() - this.speechFinalTs;
+    }
     if (match.important) {
       this.askConfirmation(match.id, match.important);
     } else {
-      this.telemetry.recordActivation(match.label || match.id, true);
+      this.telemetry.recordActivation(match.label || match.id, true, {
+        speechToActionMs: this.lastSpeechToActionLatency,
+      });
       this.phase = 'IDLE';
       this.transport.send('engine.request', {
         t: 'engine.activate', id: `act_${++this.currentRequestId}`, matchId: match.id, verb,
@@ -646,6 +710,10 @@ export class Orchestrator {
   }
 
   private rearmToAiming(): void {
+    if (this.engineTimer) {
+      clearTimeout(this.engineTimer);
+      this.engineTimer = null;
+    }
     this.quadrantLocked = false;
     this.isWidenedScope = false;
     this.phase = this.quadrant ? 'AIMING' : 'IDLE';

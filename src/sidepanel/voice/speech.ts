@@ -103,7 +103,17 @@ export class SpeechModule {
     this.running = true;
     this.initAndStartRecognizer();
     if (this.audioMonitor) {
-      this.audioMonitor.start().catch((e) => console.warn('[SpeechModule] mic audio error:', e));
+      this.audioMonitor.start().catch((e: any) => {
+        console.warn('[SpeechModule] mic audio error:', e);
+        const errName = e?.name === 'NotAllowedError' ? 'not-allowed'
+          : e?.name === 'NotReadableError' ? 'audio-capture'
+          : 'audio-capture';
+        this.transport.send('speech', {
+          t: 'speech.error',
+          error: errName,
+          message: e?.message || 'Microphone access failed',
+        });
+      });
     }
   }
 
@@ -175,6 +185,11 @@ export class SpeechModule {
 
     if (!SpeechClass) {
       console.warn('[SpeechModule] Web Speech API not supported in this browser context.');
+      this.transport.send('speech', {
+        t: 'speech.error',
+        error: 'service-not-allowed',
+        message: 'Web Speech API is not supported or unavailable in this browser context.',
+      });
       return;
     }
 
@@ -235,6 +250,13 @@ export class SpeechModule {
         if (event.error === 'no-speech' || event.error === 'audio-capture') {
           this.utteranceStarted = false;
         }
+
+        // Emit speech.error for orchestrator error state handling
+        this.transport.send('speech', {
+          t: 'speech.error',
+          error: event.error,
+          message: event.message,
+        });
       };
 
       recognition.onend = () => {
