@@ -1,12 +1,18 @@
 import { FilesetResolver, FaceLandmarker, FaceLandmarkerResult } from '@mediapipe/tasks-vision';
 import { OneEuroFilter } from './OneEuroFilter';
-import type { HeadEvent, HeadMode, Quadrant, Dir, ImpairmentConfig } from '../../shared/contract';
+import { PointerMapper } from './PointerMapper';
+import { QuadrantClassifier } from './QuadrantClassifier';
+import { GestureAnalyzer } from './GestureAnalyzer';
+import { FacingDetector } from './FacingDetector';
+import type { HeadEvent, HeadMode, Dir, ImpairmentConfig } from '../../shared/contract';
 
 export interface HeadTrackerOptions {
   wasmPath?: string;
   modelPath?: string;
   minCutoff?: number;
   beta?: number;
+  gain?: number;
+  deadzone?: number;
 }
 
 export class HeadTracker {
@@ -18,46 +24,34 @@ export class HeadTracker {
   private mode: HeadMode = 'quadrant';
   private listeners: Set<(evt: HeadEvent) => void> = new Set();
 
-  // One Euro Filters for 5 degrees of freedom
+  // Sub-modules
   private pitchFilter = new OneEuroFilter();
   private yawFilter = new OneEuroFilter();
   private rollFilter = new OneEuroFilter();
-  private pointerXFilter = new OneEuroFilter({ minCutoff: 1.5, beta: 0.01 });
-  private pointerYFilter = new OneEuroFilter({ minCutoff: 1.5, beta: 0.01 });
 
-  // Calibration neutral pose baseline
-  private pitch0 = 0;
-  private yaw0 = 0;
+  public pointerMapper = new PointerMapper();
+  public quadrantClassifier = new QuadrantClassifier();
+  public gestureAnalyzer = new GestureAnalyzer();
+  public facingDetector = new FacingDetector();
 
-  // Quadrant tracking state
-  private activeQuadrant: Quadrant | null = null;
-  private lastFacingState = true;
-
-  // FPS & Diagnostics
+  // Diagnostics & Timing
   private frameCount = 0;
   private lastFpsTime = 0;
   private currentFps = 0;
+  private lastPointerEmitTime = 0;
 
-  // Velocity tracking for Flick, Nod, Shake
-  private lastPitch = 0;
-  private lastYaw = 0;
-  private lastTimestamp = 0;
-  private lastFlickTime = 0;
-  private lastNodTime = 0;
-  private lastShakeTime = 0;
-
-  // Impairment hooks
   private impairment: ImpairmentConfig | null = null;
 
   constructor(private options: HeadTrackerOptions = {}) {
     const minCutoff = options.minCutoff ?? 1.0;
     const beta = options.beta ?? 0.007;
+    const gain = options.gain ?? 2.2;
+    const deadzone = options.deadzone ?? 0.02;
+
     this.setFilterParams(minCutoff, beta);
+    this.pointerMapper.setConfig({ gain, deadzone });
   }
 
-  /**
-   * Initialize MediaPipe FaceLandmarker with GPU delegate and CPU fallback.
-   */
   public async initialize(): Promise<void> {
     const wasmPath = this.options.wasmPath || '/mediapipe';
     const modelPath = this.options.modelPath || '/mediapipe/face_landmarker.task';
@@ -65,7 +59,6 @@ export class HeadTracker {
     const fileset = await FilesetResolver.forVisionTasks(wasmPath);
 
     try {
-      // Try GPU delegate first
       this.landmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath: modelPath,
@@ -91,9 +84,6 @@ export class HeadTracker {
     }
   }
 
-  /**
-   * Start webcam video acquisition and tracking loop.
-   */
   public async start(videoElement?: HTMLVideoElement): Promise<void> {
     if (this.isRunning) return;
 
@@ -146,27 +136,28 @@ export class HeadTracker {
 
   public setMode(mode: HeadMode): void {
     this.mode = mode;
+    this.quadrantClassifier.setMode(mode);
   }
 
-  public recenter(): void {
-    this.pitch0 = this.lastPitch;
-    this.yaw0 = this.lastYaw;
+  public recenter(pitch?: number, yaw?: number): void {
+    if (pitch !== undefined && yaw !== undefined) {
+      this.pointerMapper.recenter(pitch, yaw);
+    }
   }
 
-  public setFilterParams(minCutoff?: number, beta?: number): void {
+  public setFilterParams(minCutoff?: number, beta?: number, gain?: number, deadzone?: number): void {
     if (minCutoff !== undefined) {
       this.pitchFilter.setParams({ minCutoff });
       this.yawFilter.setParams({ minCutoff });
       this.rollFilter.setParams({ minCutoff });
-      this.pointerXFilter.setParams({ minCutoff: minCutoff * 1.5 });
-      this.pointerYFilter.setParams({ minCutoff: minCutoff * 1.5 });
     }
     if (beta !== undefined) {
       this.pitchFilter.setParams({ beta });
       this.yawFilter.setParams({ beta });
       this.rollFilter.setParams({ beta });
-      this.pointerXFilter.setParams({ beta });
-      this.pointerYFilter.setParams({ beta });
+    }
+    if (gain !== undefined || deadzone !== undefined) {
+      this.pointerMapper.setConfig({ gain, deadzone });
     }
   }
 
@@ -195,51 +186,29 @@ export class HeadTracker {
     return this.videoElement;
   }
 
-  private startFrameLoop(): void {
-    const processFrame = (now: number) => {
-      if (!this.isRunning) return;
-
-      if (this.videoElement && this.videoElement.readyState >= 2 && this.landmarker) {
-        // Dropped frame simulation check
-        if (!this.shouldDropFrame()) {
-          this.processLandmarks(now);
-        }
-      }
-
-      // requestVideoFrameCallback if available, fallback to requestAnimationFrame
-      if (this.videoElement && 'requestVideoFrameCallback' in this.videoElement) {
-        (this.videoElement as unknown as { requestVideoFrameCallback: (cb: (now: number) => void) => void })
-          .requestVideoFrameCallback(() => processFrame(performance.now()));
-      } else {
-        this.animFrameId = requestAnimationFrame(processFrame);
-      }
-    };
-
-    processFrame(performance.now());
-  }
-
-  private processLandmarks(timestampMs: number): void {
-    if (!this.videoElement || !this.landmarker) return;
-
-    // Calculate FPS
-    this.frameCount++;
-    if (timestampMs - this.lastFpsTime >= 1000) {
-      this.currentFps = Math.round((this.frameCount * 1000) / (timestampMs - this.lastFpsTime));
-      this.frameCount = 0;
-      this.lastFpsTime = timestampMs;
-    }
-
+  /**
+   * Process a single timestamped frame (can be called by webcam loop or synthetic tests).
+   */
+  public processFrame(result: FaceLandmarkerResult, timestampMs: number): void {
     if (this.mode === 'off') return;
 
-    const result: FaceLandmarkerResult = this.landmarker.detectForVideo(this.videoElement, timestampMs);
+    const faceDetected = result.faceLandmarks && result.faceLandmarks.length > 0;
 
-    const faceDetected = result.faceLandmarks.length > 0;
-    const facing = faceDetected && this.checkFacing(result);
+    // 1. Process Facing / Look-Away Detector (emits only on state change)
+    let rawPitch = 0;
+    let rawYaw = 0;
+    let rawRoll = 0;
 
-    // Emit facing status
-    if (facing !== this.lastFacingState) {
-      this.lastFacingState = facing;
-      this.emit({ t: 'head.facing', facing });
+    if (faceDetected) {
+      const angles = this.extractEulerAngles(result);
+      rawPitch = angles.pitch;
+      rawYaw = angles.yaw;
+      rawRoll = angles.roll;
+    }
+
+    const facingChanged = this.facingDetector.update(rawPitch, rawYaw, faceDetected, timestampMs);
+    if (facingChanged) {
+      this.emit({ t: 'head.facing', facing: this.facingDetector.getFacing() });
     }
 
     if (!faceDetected) {
@@ -253,58 +222,82 @@ export class HeadTracker {
       return;
     }
 
-    // 1. Extract raw Euler angles (pitch, yaw, roll)
-    const rawAngles = this.extractEulerAngles(result);
+    // 2. Inject tremor impairment if enabled
+    const angles = this.injectTremor({ pitch: rawPitch, yaw: rawYaw, roll: rawRoll }, timestampMs);
 
-    // 2. Inject tremor impairment if active
-    const angles = this.injectTremor(rawAngles, timestampMs);
-
-    // 3. Filter raw pose angles through One Euro Filters
+    // 3. One Euro Filter smoothing
     const pitch = this.pitchFilter.filter(angles.pitch, timestampMs);
     const yaw = this.yawFilter.filter(angles.yaw, timestampMs);
-    const roll = this.rollFilter.filter(angles.roll, timestampMs);
 
-    // 4. Calculate relative pointer coordinates (0..1)
-    const relPitch = pitch - this.pitch0;
-    const relYaw = yaw - this.yaw0;
+    // 4. Relative Pointer Mapping
+    const pointer = this.pointerMapper.map(pitch, yaw);
 
-    // Yaw range [-0.3, +0.3] rad -> X [0, 1]
-    // Pitch range [-0.2, +0.2] rad -> Y [0, 1]
-    const rawPx = Math.max(0, Math.min(1, 0.5 + relYaw / 0.6));
-    const rawPy = Math.max(0, Math.min(1, 0.5 + relPitch / 0.4));
-
-    const px = this.pointerXFilter.filter(rawPx, timestampMs);
-    const py = this.pointerYFilter.filter(rawPy, timestampMs);
-
-    // Emit filtered pointer
-    this.emit({ t: 'head.pointer', x: px, y: py });
-
-    // 5. Quadrant tracking (active in 'quadrant' mode)
-    if (this.mode === 'quadrant') {
-      this.updateQuadrant(px, py);
+    // Emit head.pointer at ~30 Hz (interval >= 28ms)
+    if (timestampMs - this.lastPointerEmitTime >= 28) {
+      this.emit({ t: 'head.pointer', x: pointer.x, y: pointer.y });
+      this.lastPointerEmitTime = timestampMs;
     }
 
-    // 6. Detect motion gestures (Flick, Nod, Shake)
-    this.detectGestures(pitch, yaw, timestampMs);
+    // 5. Quadrant Classifier (with hysteresis & 300ms stability dwell)
+    const qResult = this.quadrantClassifier.update(pointer.x, pointer.y, timestampMs);
+    if (qResult && qResult.changed) {
+      this.emit({ t: 'head.quadrant', q: qResult.q, stable: qResult.stable });
+    }
 
-    // 7. Emit quality metric
+    // 6. Gesture Detector (Flick, Nod, Shake - active unless mode is 'off')
+    const gestures = this.gestureAnalyzer.process(pitch, yaw, timestampMs);
+    for (const g of gestures) {
+      if (g.type === 'flick') {
+        this.emit({ t: 'head.flick', dir: g.dir });
+      } else if (g.type === 'nod') {
+        this.emit({ t: 'head.nod' });
+      } else if (g.type === 'shake') {
+        this.emit({ t: 'head.shake' });
+      }
+    }
+
+    // 7. Quality metrics
     this.emit({
       t: 'head.quality',
-      jitter: Math.abs(pitch - rawAngles.pitch) + Math.abs(yaw - rawAngles.yaw),
+      jitter: Math.abs(pitch - rawPitch) + Math.abs(yaw - rawYaw),
       brightness: 0.8,
       faceConf: 0.95,
       fps: this.currentFps,
     });
+  }
 
-    this.lastPitch = pitch;
-    this.lastYaw = yaw;
-    this.lastTimestamp = timestampMs;
+  private startFrameLoop(): void {
+    const processFrame = (now: number) => {
+      if (!this.isRunning) return;
+
+      if (this.videoElement && this.videoElement.readyState >= 2 && this.landmarker) {
+        if (!this.shouldDropFrame()) {
+          this.frameCount++;
+          if (now - this.lastFpsTime >= 1000) {
+            this.currentFps = Math.round((this.frameCount * 1000) / (now - this.lastFpsTime));
+            this.frameCount = 0;
+            this.lastFpsTime = now;
+          }
+
+          const result = this.landmarker.detectForVideo(this.videoElement, now);
+          this.processFrame(result, now);
+        }
+      }
+
+      if (this.videoElement && 'requestVideoFrameCallback' in this.videoElement) {
+        (this.videoElement as unknown as { requestVideoFrameCallback: (cb: (now: number) => void) => void })
+          .requestVideoFrameCallback(() => processFrame(performance.now()));
+      } else {
+        this.animFrameId = requestAnimationFrame(processFrame);
+      }
+    };
+
+    processFrame(performance.now());
   }
 
   private extractEulerAngles(result: FaceLandmarkerResult): { pitch: number; yaw: number; roll: number } {
     if (result.facialTransformationMatrixes && result.facialTransformationMatrixes.length > 0) {
       const mat = result.facialTransformationMatrixes[0].data;
-      // 4x4 column-major matrix
       const r21 = mat[9];
       const r22 = mat[10];
       const r20 = mat[8];
@@ -318,7 +311,6 @@ export class HeadTracker {
       return { pitch, yaw, roll };
     }
 
-    // Geometry fallback from landmarks: Nose tip (#1), Chin (#152), Left Eye (#33), Right Eye (#263)
     const lm = result.faceLandmarks[0];
     const nose = lm[1];
     const chin = lm[152];
@@ -333,85 +325,6 @@ export class HeadTracker {
     const pitch = (nose.y - (leftEye.y + chin.y) / 2) * 2.5;
 
     return { pitch, yaw, roll };
-  }
-
-  private checkFacing(result: FaceLandmarkerResult): boolean {
-    const raw = this.extractEulerAngles(result);
-    const absYaw = Math.abs(raw.yaw);
-    const absPitch = Math.abs(raw.pitch);
-
-    // Facing threshold: yaw < 35 deg (0.61 rad), pitch < 25 deg (0.43 rad)
-    return absYaw < 0.61 && absPitch < 0.43;
-  }
-
-  private updateQuadrant(x: number, y: number): void {
-    const hysteresis = 0.04;
-    let newQ: Quadrant;
-
-    // Apply hysteresis margin around 0.5
-    let isRight = x >= 0.5;
-    if (this.activeQuadrant === 'TL' || this.activeQuadrant === 'BL') {
-      isRight = x >= 0.5 + hysteresis;
-    } else if (this.activeQuadrant === 'TR' || this.activeQuadrant === 'BR') {
-      isRight = x >= 0.5 - hysteresis;
-    }
-
-    let isBottom = y >= 0.5;
-    if (this.activeQuadrant === 'TL' || this.activeQuadrant === 'TR') {
-      isBottom = y >= 0.5 + hysteresis;
-    } else if (this.activeQuadrant === 'BL' || this.activeQuadrant === 'BR') {
-      isBottom = y >= 0.5 - hysteresis;
-    }
-
-    if (!isRight && !isBottom) newQ = 'TL';
-    else if (isRight && !isBottom) newQ = 'TR';
-    else if (!isRight && isBottom) newQ = 'BL';
-    else newQ = 'BR';
-
-    if (newQ !== this.activeQuadrant) {
-      this.activeQuadrant = newQ;
-      this.emit({ t: 'head.quadrant', q: this.activeQuadrant, stable: true });
-    }
-  }
-
-  private detectGestures(pitch: number, yaw: number, nowMs: number): void {
-    if (this.lastTimestamp === 0) return;
-
-    const dt = (nowMs - this.lastTimestamp) / 1000.0;
-    if (dt <= 1e-4) return;
-
-    const pitchVel = (pitch - this.lastPitch) / dt;
-    const yawVel = (yaw - this.lastYaw) / dt;
-
-    // Flick Detection: High angular velocity (> 2.8 rad/s)
-    if (nowMs - this.lastFlickTime > 400) {
-      if (Math.abs(pitchVel) > 2.8 || Math.abs(yawVel) > 2.8) {
-        let dir: Dir;
-        if (Math.abs(pitchVel) > Math.abs(yawVel)) {
-          dir = pitchVel < 0 ? 'up' : 'down';
-        } else {
-          dir = yawVel > 0 ? 'right' : 'left';
-        }
-        this.emit({ t: 'head.flick', dir });
-        this.lastFlickTime = nowMs;
-      }
-    }
-
-    // Nod Detection: Downward pitch velocity followed by quick upward reversal
-    if (nowMs - this.lastNodTime > 800) {
-      if (pitchVel > 2.0 && this.lastPitch - this.pitch0 > 0.08) {
-        this.emit({ t: 'head.nod' });
-        this.lastNodTime = nowMs;
-      }
-    }
-
-    // Shake Detection: Rapid yaw oscillations left-right
-    if (nowMs - this.lastShakeTime > 800) {
-      if (Math.abs(yawVel) > 2.5 && Math.abs(this.lastYaw - this.yaw0) > 0.12) {
-        this.emit({ t: 'head.shake' });
-        this.lastShakeTime = nowMs;
-      }
-    }
   }
 
   private shouldDropFrame(): boolean {

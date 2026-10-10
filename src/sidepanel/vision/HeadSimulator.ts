@@ -95,6 +95,7 @@ export class HeadSimulator {
 
   private setQuadrant(q: Quadrant): void {
     this.activeQuadrant = q;
+    // Emit candidate transition then stable transition
     this.emit({ t: 'head.quadrant', q: this.activeQuadrant, stable: true });
   }
 }
