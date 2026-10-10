@@ -1,3 +1,5 @@
+import { extractColorBucket } from './color';
+
 /**
  * Normalizes text for voice-command matching:
  * - Decodes unicode diacritics
@@ -19,38 +21,7 @@ export function normalizeLabel(text: string | null | undefined): string {
  * Maps CSS color strings (rgb, rgba, hex, named colors) to standard color names.
  */
 export function extractColorName(element: Element): string | undefined {
-  try {
-    const style = window.getComputedStyle(element);
-    const bg = style.backgroundColor;
-    const color = style.color;
-    const border = style.borderColor;
-
-    // Check background first, then text color
-    for (const colStr of [bg, color, border]) {
-      const match = colStr?.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
-      if (match) {
-        const r = parseInt(match[1], 10);
-        const g = parseInt(match[2], 10);
-        const b = parseInt(match[3], 10);
-        const a = match[4] !== undefined ? parseFloat(match[4]) : 1;
-        if (a < 0.1 && colStr === bg) continue; // transparent background
-
-        // Basic color clustering
-        if (r > 200 && g < 80 && b < 80) return 'red';
-        if (g > 160 && r < 100 && b < 100) return 'green';
-        if (b > 180 && r < 120 && g < 150) return 'blue';
-        if (r > 200 && g > 180 && b < 80) return 'yellow';
-        if (r > 200 && g > 100 && b < 50) return 'orange';
-        if (r > 150 && g < 80 && b > 150) return 'purple';
-        if (r > 235 && g > 235 && b > 235) return 'white';
-        if (r < 40 && g < 40 && b < 40) return 'black';
-        if (Math.abs(r - g) < 20 && Math.abs(g - b) < 20) return 'gray';
-      }
-    }
-  } catch {
-    // If window or computed style is unavailable (e.g. detached node)
-  }
-  return undefined;
+  return extractColorBucket(element);
 }
 
 /**
