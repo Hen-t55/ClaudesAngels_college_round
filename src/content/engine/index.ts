@@ -25,18 +25,52 @@ export class Engine {
   private zoomStack: Rect[] = [];
   private zoomDepth = 0;
 
-  // Undo: last input value before fill/insert
-  private undoTarget: HTMLInputElement | HTMLTextAreaElement | null = null;
-  private undoValue = '';
+  // Undo log (up to 10 reversible actions)
+  private undoStack: { 
+    type: 'type' | 'scroll'; 
+    target?: HTMLElement; 
+    value?: string; 
+    scrollX?: number; 
+    scrollY?: number; 
+  }[] = [];
 
   // Pending confirmation
   private pendingConfirm: { id: string; matchId: string; verb: Verb } | null = null;
+  private pendingFormSubmit: HTMLFormElement | null = null;
+  private isConfirmingSubmit = false;
+
+  private handleSubmit = (e: SubmitEvent) => {
+    if (this.isConfirmingSubmit) return;
+
+    const form = e.target as HTMLFormElement;
+    // Reject already-cancelled events, detached forms, or non-form targets
+    if (!form || !(form instanceof HTMLFormElement) || !form.isConnected || e.defaultPrevented) return;
+
+    const inputs = form.querySelectorAll('input:not([type="hidden"]), textarea, select');
+    if (inputs.length <= 1) return; // single-field search forms are routine
+
+    e.preventDefault();
+    e.stopImmediatePropagation();
+
+    const actionId = `submit_${Date.now()}`;
+    this.pendingConfirm = { id: actionId, matchId: 'form', verb: 'click' };
+    this.pendingFormSubmit = form;
+
+    this.transport?.send('engine.event', {
+      t: 'engine.confirmNeeded',
+      actionId,
+      info: { reason: 'form_submit', description: 'Submit multi-field form' }
+    });
+  };
 
   constructor(transport?: Transport) {
     this.indexer = new DomIndexer();
     this.hopNavigator = new HopNavigator();
     if (transport) {
       this.attachTransport(transport);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('submit', this.handleSubmit, true); // capture phase
     }
   }
 
@@ -84,6 +118,7 @@ export class Engine {
         break;
 
       case 'engine.global':
+        this.pushUndo({ type: 'scroll', scrollX: window.scrollX, scrollY: window.scrollY });
         Executor.scroll(req.name, req.scope);
         this.transport?.send('engine.event', {
           t: 'engine.done',
@@ -116,6 +151,17 @@ export class Engine {
       case 'engine.clear':
         this.currentMatches = [];
         this.hopNavigator.setMatches([]);
+        this.zoomStack = [];
+        this.zoomDepth = 0;
+        this.pendingConfirm = null;
+        this.pendingFormSubmit = null;
+        this.transport?.send('engine.event', {
+          t: 'engine.result',
+          id: 'clear',
+          status: 'none',
+          matches: [],
+          widened: false,
+        });
         break;
 
       default:
@@ -151,6 +197,7 @@ export class Engine {
     if (status === 'one' && matches.length === 1) {
       const topMeta = matchMetas[0];
       if (topMeta.important) {
+        this.pendingConfirm = { id: reqId, matchId: topMeta.id, verb };
         this.transport?.send('engine.event', {
           t: 'engine.confirmNeeded',
           actionId: reqId,
@@ -514,8 +561,7 @@ export class Engine {
 
     // Input / TextArea handling (including React controlled inputs)
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-      this.undoTarget = target;
-      this.undoValue = target.value;
+      this.pushUndo({ type: 'type', target, value: target.value });
 
       let newValue = text;
       if (mode === 'insert') {
@@ -543,13 +589,38 @@ export class Engine {
     }
   }
 
+  private pushUndo(action: { type: 'type' | 'scroll'; target?: HTMLElement; value?: string; scrollX?: number; scrollY?: number }) {
+    this.undoStack.push(action);
+    if (this.undoStack.length > 10) {
+      this.undoStack.shift();
+    }
+  }
+
   /**
-   * Undo: restore the last input value before a type operation.
+   * Undo: pop the last action and revert it.
    */
   public handleUndo(): void {
-    if (this.undoTarget && this.undoTarget.isConnected) {
-      this.undoTarget.value = this.undoValue;
-      this.undoTarget.dispatchEvent(new Event('input', { bubbles: true }));
+    const action = this.undoStack.pop();
+    if (!action) {
+      this.transport?.send('engine.event', {
+        t: 'engine.done',
+        ok: false,
+        what: 'nothing to undo',
+      });
+      return;
+    }
+
+    if (action.type === 'scroll') {
+      window.scrollTo(action.scrollX ?? 0, action.scrollY ?? 0);
+      this.transport?.send('engine.event', {
+        t: 'engine.done',
+        ok: true,
+        what: 'undo_scroll',
+      });
+    } else if (action.type === 'type' && action.target && action.target.isConnected) {
+      const target = action.target as HTMLInputElement | HTMLTextAreaElement;
+      target.value = action.value || '';
+      target.dispatchEvent(new Event('input', { bubbles: true }));
       this.transport?.send('engine.event', {
         t: 'engine.done',
         ok: true,
@@ -559,11 +630,9 @@ export class Engine {
       this.transport?.send('engine.event', {
         t: 'engine.done',
         ok: false,
-        what: 'nothing to undo',
+        what: 'undo_failed',
       });
     }
-    this.undoTarget = null;
-    this.undoValue = '';
   }
 
   /**
@@ -580,13 +649,24 @@ export class Engine {
     }
 
     if (accept) {
-      // Re-activate with confirmed=true
-      this.handleActivate(
-        this.pendingConfirm.id,
-        this.pendingConfirm.matchId,
-        this.pendingConfirm.verb,
-        true
-      );
+      if (this.pendingFormSubmit && this.pendingConfirm.matchId === 'form') {
+        this.isConfirmingSubmit = true;
+        this.pendingFormSubmit.requestSubmit();
+        this.isConfirmingSubmit = false;
+        this.transport?.send('engine.event', {
+          t: 'engine.done',
+          ok: true,
+          what: 'form_submitted',
+        });
+      } else {
+        // Re-activate with confirmed=true
+        this.handleActivate(
+          this.pendingConfirm.id,
+          this.pendingConfirm.matchId,
+          this.pendingConfirm.verb,
+          true
+        );
+      }
     } else {
       this.transport?.send('engine.event', {
         t: 'engine.done',
@@ -600,6 +680,9 @@ export class Engine {
 
   public destroy(): void {
     this.indexer.destroy();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('submit', this.handleSubmit, true);
+    }
   }
 }
 
