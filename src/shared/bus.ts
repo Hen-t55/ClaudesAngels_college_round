@@ -2,6 +2,7 @@
 import type {
   HeadEvent, HeadCommand, SpeechEvent,
   EngineRequest, EngineEvent, OverlayState,
+  Telemetry, SettingsMessage, TabCommand,
 } from './contract';
 
 export interface ChannelMap {
@@ -11,6 +12,9 @@ export interface ChannelMap {
   'engine.request': EngineRequest;
   'engine.event':   EngineEvent;
   'overlay':        OverlayState;
+  'telemetry':      Telemetry;
+  'settings':       SettingsMessage;
+  'tab.command':    TabCommand;
 }
 
 export type Channel = keyof ChannelMap;

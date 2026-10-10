@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chaos Lab: Accessibility & Head-Control Benchmark</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --border: #1f2937;
+      --text: #f3f4f6;
+      --text-dim: #9ca3af;
+      --accent: #38bdf8;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f43f5e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+    
+    header { background: #0b1120; border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 16px; letter-spacing: 0.5px; }
+    .badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700; }
+    .badge-sim { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-sys { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+
+    .main-layout { display: grid; grid-template-columns: 320px 1fr; flex: 1; height: calc(100vh - 65px); }
+    .sidebar { background: #0c1222; border-right: 1px solid var(--border); padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+    .workspace { padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; position: relative; }
+
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    .card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; letter-spacing: 0.5px; }
+    
+    label { font-size: 12px; font-weight: 600; color: #d1d5db; display: block; margin-bottom: 6px; }
+    select, input[type="text"] { width: 100%; background: #090d16; border: 1px solid var(--border); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 10px; outline: none; }
+    select:focus, input[type="text"]:focus { border-color: var(--accent); }
+
+    .btn { background: #1e293b; border: 1px solid #334155; color: #fff; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 12px; cursor: pointer; transition: all 0.15s; text-align: center; }
+    .btn:hover { background: #334155; }
+    .btn-primary { background: #0284c7; border-color: #0369a1; }
+    .btn-primary:hover { background: #0369a1; }
+    .btn-success { background: #059669; border-color: #047857; }
+    .btn-success:hover { background: #047857; }
+    .btn-danger { background: #e11d48; border-color: #be123c; }
+
+    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+    .step-indicator { display: flex; flex-direction: column; gap: 8px; }
+    .step-item { display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 8px 10px; border-radius: 6px; background: #090d16; border: 1px solid var(--border); }
+    .step-item.active { border-color: var(--accent); background: rgba(56, 189, 248, 0.08); font-weight: 700; }
+
+    /* Task Canvas Arena */
+    .arena { min-height: 480px; border: 2px dashed var(--border); border-radius: 12px; display: flex; align-items: center; justify-content: center; position: relative; background: #090d16; overflow: hidden; }
+    
+    /* Fitts Target */
+    .fitts-target { position: absolute; border-radius: 50%; background: #38bdf8; border: 3px solid #fff; box-shadow: 0 0 15px rgba(56,189,248,0.5); cursor: pointer; transition: transform 0.1s; }
+    .fitts-target:hover { transform: scale(1.05); }
+
+    /* Decoy Grid for T5 */
+    .decoy-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; width: 100%; max-width: 600px; }
+    .decoy-btn { padding: 14px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #94a3b8; font-weight: 600; cursor: pointer; text-align: center; }
+    .decoy-btn:hover { border-color: var(--accent); color: #fff; }
+
+    .stats-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
+    .stats-table th, .stats-table td { padding: 6px 8px; border: 1px solid var(--border); text-align: left; }
+    .stats-table th { background: #0c1222; color: var(--text-dim); }
+
+    /* Rest Overlay */
+    .rest-modal { position: absolute; inset: 0; background: rgba(9, 13, 22, 0.95); backdrop-filter: blur(4px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 50; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">
+      <span>🔬</span>
+      <span>Chaos Lab Benchmark</span>
+      <span class="badge badge-sim">Simulated Impairments</span>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <span id="headerParticipant" class="badge badge-sys">Participant: P-01</span>
+      <button id="btnExportCSV" class="btn btn-primary">Export CSV</button>
+      <button id="btnExportJSON" class="btn">Export JSON</button>
+      <button id="btnClearData" class="btn btn-danger">Clear</button>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <!-- Sidebar Control Panel -->
+    <aside class="sidebar">
+      <div class="card">
+        <div class="card-title">Session Configuration</div>
+        <label for="inputParticipant">Participant ID</label>
+        <input type="text" id="inputParticipant" value="P-01" />
+
+        <label for="selectSystem">Evaluation System</label>
+        <select id="selectSystem">
+          <option value="handsfree">Full Handsfree (Voice + Quadrant + Shifter)</option>
+          <option value="naive">Naive Head Cursor + Dwell (No snap/voice)</option>
+          <option value="mouse">Mouse + Keyboard Baseline</option>
+        </select>
+
+        <label for="selectLevel">Simulated Impairment Level</label>
+        <select id="selectLevel">
+          <option value="0">Level 0: Clean / Baseline</option>
+          <option value="1">Level 1: Moderate Tremor & Cafeteria Noise</option>
+          <option value="2">Level 2: Severe Ataxia & High Noise</option>
+        </select>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Acoustic Noise Floor Player</div>
+        <div style="font-size: 11px; color: var(--text-dim); margin-bottom: 8px;" id="noiseDesc">
+          Quiet ambient background (< 35 dB)
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <input type="range" id="sliderNoise" min="0" max="1" step="0.05" value="0" style="flex: 1;" />
+          <span id="txtNoiseVol" style="font-size: 11px; font-family: monospace;">0%</span>
+        </div>
+        <button id="btnToggleNoise" class="btn" style="width: 100%; margin-top: 8px;">▶ Play Noise Track</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Benchmark Tasks (T1 - T6)</div>
+        <div class="step-indicator">
+          <div class="step-item active" data-task="T1"><span>T1: Fitts Targets</span><span id="progT1">0/6</span></div>
+          <div class="step-item" data-task="T2"><span>T2: Form Fill</span><span id="progT2">Pending</span></div>
+          <div class="step-item" data-task="T3"><span>T3: Navigation Flow</span><span id="progT3">Pending</span></div>
+          <div class="step-item" data-task="T4"><span>T4: Repeated Items</span><span id="progT4">Pending</span></div>
+          <div class="step-item" data-task="T5"><span>T5: Background Talk</span><span id="progT5">Pending</span></div>
+          <div class="step-item" data-task="T6"><span>T6: Canvas & Iframe</span><span id="progT6">Pending</span></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Workspace & Active Task Arena -->
+    <main class="workspace">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h2 id="taskHeading" style="font-size: 18px; font-weight: 700;">Task 1: Fitts-Style Target Acquisition</h2>
+          <p id="taskSubhead" style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">
+            Click or dwell on the highlighted circular target as quickly and accurately as possible.
+          </p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button id="btnStartTrial" class="btn btn-success">Start Trial</button>
+          <button id="btnNextTask" class="btn">Next Task ➔</button>
+        </div>
+      </div>
+
+      <!-- Active Interactive Arena -->
+      <div id="arena" class="arena">
+        <!-- Interactive task elements are dynamically mounted here -->
+        <div id="arenaPlaceholder" style="text-align: center; color: var(--text-dim);">
+          <div style="font-size: 32px; margin-bottom: 8px;">🎯</div>
+          <p>Press <b>Start Trial</b> to begin the current evaluation task.</p>
+        </div>
+      </div>
+
+      <!-- Real-time Session Metrics Summary -->
+      <div class="card">
+        <div class="card-title">Session Telemetry & Computed Metrics</div>
+        <table class="stats-table">
+          <thead>
+            <tr>
+              <th>System</th>
+              <th>Level</th>
+              <th>Task</th>
+              <th>Trials</th>
+              <th>Accuracy</th>
+              <th>Mean Time</th>
+              <th>Throughput (bps)</th>
+              <th>Errors</th>
+              <th>Accidental</th>
+            </tr>
+          </thead>
+          <tbody id="metricsBody">
+            <tr><td colspan="9" style="text-align: center; color: var(--text-dim);">No telemetry logged yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    import { BENCHMARK_IMPAIRMENT_PRESETS } from './presets.js';
+    import { calculateBenchmarkMetrics, exportTelemetryToCSV, exportTelemetryToJSON } from './metrics.js';
+    import { TelemetryLogger } from './telemetryLogger.js';
+    import { startNaiveBaseline } from './naiveBaseline.js';
+
+    const logger = new TelemetryLogger();
+    let currentTask = 'T1';
+    let currentTrial = 1;
+    let trialStartTime = 0;
+    let naiveHandle = null;
+    let audioCtx = null;
+    let noiseNode = null;
+    let gainNode = null;
+    let isNoisePlaying = false;
+
+    // DOM Elements
+    const selectSystem = document.getElementById('selectSystem');
+    const selectLevel = document.getElementById('selectLevel');
+    const inputParticipant = document.getElementById('inputParticipant');
+    const sliderNoise = document.getElementById('sliderNoise');
+    const txtNoiseVol = document.getElementById('txtNoiseVol');
+    const noiseDesc = document.getElementById('noiseDesc');
+    const btnToggleNoise = document.getElementById('btnToggleNoise');
+    const arena = document.getElementById('arena');
+    const metricsBody = document.getElementById('metricsBody');
+    const taskHeading = document.getElementById('taskHeading');
+    const taskSubhead = document.getElementById('taskSubhead');
+    const btnStartTrial = document.getElementById('btnStartTrial');
+    const btnNextTask = document.getElementById('btnNextTask');
+
+    // Synthetic Audio Noise Synthesizer (White noise + lowpass speech simulator)
+    function initAudioNoise() {
+      if (audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const bufferSize = audioCtx.sampleRate * 2;
+      const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+
+      noiseNode = audioCtx.createBufferSource();
+      noiseNode.buffer = buffer;
+      noiseNode.loop = true;
+
+      gainNode = audioCtx.createGain();
+      gainNode.gain.value = 0;
+
+      noiseNode.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      noiseNode.start();
+    }
+
+    btnToggleNoise.addEventListener('click', () => {
+      initAudioNoise();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      isNoisePlaying = !isNoisePlaying;
+      if (isNoisePlaying) {
+        gainNode.gain.value = parseFloat(sliderNoise.value);
+        btnToggleNoise.textContent = '⏸ Pause Noise Track';
+      } else {
+        gainNode.gain.value = 0;
+        btnToggleNoise.textContent = '▶ Play Noise Track';
+      }
+    });
+
+    sliderNoise.addEventListener('input', (e) => {
+      const vol = parseFloat(e.target.value);
+      txtNoiseVol.textContent = `${Math.round(vol * 100)}%`;
+      if (gainNode && isNoisePlaying) {
+        gainNode.gain.value = vol;
+      }
+    });
+
+    selectLevel.addEventListener('change', () => {
+      const lvl = parseInt(selectLevel.value, 10);
+      const preset = BENCHMARK_IMPAIRMENT_PRESETS[lvl];
+      sliderNoise.value = preset.noiseVolume;
+      txtNoiseVol.textContent = `${Math.round(preset.noiseVolume * 100)}%`;
+      noiseDesc.textContent = preset.noiseDesc;
+      if (gainNode && isNoisePlaying) gainNode.gain.value = preset.noiseVolume;
+
+      // Broadcast simulated impairment config to extension
+      window.postMessage({ type: 'HANDSFREE_SET_IMPAIRMENT', cfg: preset.config }, '*');
+    });
+
+    // Naive baseline management
+    function updateSystemMode() {
+      if (naiveHandle) {
+        naiveHandle.destroy();
+        naiveHandle = null;
+      }
+
+      const sys = selectSystem.value;
+      if (sys === 'naive') {
+        // Create mock transport for benchmark page
+        const mockTransport = {
+          send: () => {},
+          on: (ch, fn) => {
+            const listener = (e) => {
+              if (e.data && e.data.t === 'head.pointer') fn(e.data);
+            };
+            window.addEventListener('message', listener);
+            return () => window.removeEventListener('message', listener);
+          }
+        };
+        naiveHandle = startNaiveBaseline(mockTransport, document, { dwellTimeMs: 900 });
+
+        // Simulate head pointer following mouse in benchmark if no real vision stream
+        window.addEventListener('mousemove', (e) => {
+          window.postMessage({
+            t: 'head.pointer',
+            x: e.clientX / window.innerWidth,
+            y: e.clientY / window.innerHeight
+          }, '*');
+        });
+      }
+    }
+    selectSystem.addEventListener('change', updateSystemMode);
+    updateSystemMode();
+
+    // Render Tasks in Arena
+    function renderCurrentTask() {
+      arena.innerHTML = '';
+      const sys = selectSystem.value;
+      const lvl = parseInt(selectLevel.value, 10);
+
+      if (currentTask === 'T1') {
+        taskHeading.textContent = 'Task 1: Fitts Target Acquisition';
+        taskSubhead.textContent = 'Acquire and click circular targets varying in diameter (30-80px) and amplitude.';
+        
+        const target = document.createElement('div');
+        target.className = 'fitts-target';
+        const diameter = 30 + Math.floor(Math.random() * 50);
+        const maxX = arena.clientWidth - diameter - 40;
+        const maxY = arena.clientHeight - diameter - 40;
+        const posX = 20 + Math.floor(Math.random() * maxX);
+        const posY = 20 + Math.floor(Math.random() * maxY);
+
+        target.style.width = `${diameter}px`;
+        target.style.height = `${diameter}px`;
+        target.style.left = `${posX}px`;
+        target.style.top = `${posY}px`;
+
+        trialStartTime = Date.now();
+        logger.log({
+          system: sys,
+          task: 'T1',
+          level: lvl,
+          trial: currentTrial,
+          event: 'trial_start',
+          target: `circle_${diameter}px`,
+          extra: { amplitude: Math.hypot(posX, posY), width: diameter }
+        });
+
+        target.addEventListener('click', () => {
+          logger.log({
+            system: sys,
+            task: 'T1',
+            level: lvl,
+            trial: currentTrial,
+            event: 'trial_end',
+            target: `circle_${diameter}px`,
+            correct: true,
+            extra: { amplitude: Math.hypot(posX, posY), width: diameter }
+          });
+          currentTrial++;
+          renderMetricsTable();
+          if (currentTrial <= 6) {
+            renderCurrentTask();
+          } else {
+            showRestScreen('Task 1 Complete! Take a quick 5-second pause before Task 2.');
+          }
+        });
+
+        arena.appendChild(target);
+      } else if (currentTask === 'T2') {
+        taskHeading.textContent = 'Task 2: Form Fill (Search & Contact)';
+        taskSubhead.textContent = 'Enter text into name, email, and query fields, then click Submit Form.';
+        arena.innerHTML = `
+          <div style="max-width: 380px; width: 100%; display: flex; flex-direction: column; gap: 12px;">
+            <div><label>Full Name</label><input type="text" id="t2Name" placeholder="e.g. Alex Morgan" /></div>
+            <div><label>Email Address</label><input type="text" id="t2Email" placeholder="alex@domain.org" /></div>
+            <div><label>Search Keyword</label><input type="text" id="t2Search" placeholder="handsfree browsing" /></div>
+            <button id="t2Submit" class="btn btn-primary" style="margin-top: 6px;">Submit Form</button>
+          </div>
+        `;
+        trialStartTime = Date.now();
+        logger.log({ system: sys, task: 'T2', level: lvl, trial: 1, event: 'trial_start' });
+
+        document.getElementById('t2Submit').addEventListener('click', () => {
+          logger.log({ system: sys, task: 'T2', level: lvl, trial: 1, event: 'trial_end', correct: true });
+          renderMetricsTable();
+          showRestScreen('Task 2 Complete! Preparing Task 3: Navigation Flow.');
+        });
+      } else if (currentTask === 'T5') {
+        taskHeading.textContent = 'Task 5: Accidental Activation Resilience';
+        taskSubhead.textContent = '2 minutes of background speech / noise. Count any accidental activations on decoy buttons.';
+        const grid = document.createElement('div');
+        grid.className = 'decoy-grid';
+        for (let i = 1; i <= 8; i++) {
+          const btn = document.createElement('button');
+          btn.className = 'decoy-btn';
+          btn.textContent = `Decoy Item #${i}`;
+          btn.addEventListener('click', () => {
+            logger.log({ system: sys, task: 'T5', level: lvl, trial: 1, event: 'accidental_activation', target: `decoy_${i}` });
+            renderMetricsTable();
+          });
+          grid.appendChild(btn);
+        }
+        arena.appendChild(grid);
+        trialStartTime = Date.now();
+        logger.log({ system: sys, task: 'T5', level: lvl, trial: 1, event: 'trial_start' });
+      } else {
+        arena.innerHTML = `
+          <div style="text-align: center; color: var(--text-dim);">
+            <div style="font-size: 32px; margin-bottom: 8px;">✅</div>
+            <p>Task ${currentTask} Arena Loaded. Interact with targets to measure metrics.</p>
+          </div>
+        `;
+      }
+    }
+
+    function showRestScreen(message) {
+      const rest = document.createElement('div');
+      rest.className = 'rest-modal';
+      rest.innerHTML = `
+        <div style="font-size: 36px;">☕</div>
+        <h3 style="font-size: 18px; font-weight: 700;">Rest & Re-arm</h3>
+        <p style="color: var(--text-dim); max-width: 320px; text-align: center; font-size: 13px;">${message}</p>
+        <button id="btnContinue" class="btn btn-primary" style="margin-top: 10px;">Continue to Next Stage ➔</button>
+      `;
+      arena.appendChild(rest);
+      document.getElementById('btnContinue').addEventListener('click', () => {
+        rest.remove();
+        nextTask();
+      });
+    }
+
+    function nextTask() {
+      const tasks = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6'];
+      const idx = tasks.indexOf(currentTask);
+      currentTask = tasks[(idx + 1) % tasks.length];
+      currentTrial = 1;
+      document.querySelectorAll('.step-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.task === currentTask);
+      });
+      renderCurrentTask();
+    }
+
+    btnStartTrial.addEventListener('click', () => {
+      currentTrial = 1;
+      renderCurrentTask();
+    });
+
+    btnNextTask.addEventListener('click', nextTask);
+
+    function renderMetricsTable() {
+      const summaries = calculateBenchmarkMetrics(logger.getAllLogs());
+      if (summaries.length === 0) {
+        metricsBody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-dim);">No telemetry logged yet.</td></tr>';
+        return;
+      }
+
+      metricsBody.innerHTML = summaries.map(s => `
+        <tr>
+          <td><b style="color: var(--accent);">${s.system}</b></td>
+          <td>Lvl ${s.level}</td>
+          <td>${s.task}</td>
+          <td>${s.totalTrials}</td>
+          <td>${Math.round(s.accuracy * 100)}%</td>
+          <td>${s.meanCompletionTimeMs} ms</td>
+          <td>${s.fittsThroughputBps !== undefined ? `${s.fittsThroughputBps} bps` : '—'}</td>
+          <td>${s.selectionErrors}</td>
+          <td style="${s.accidentalActivations > 0 ? 'color: var(--danger); font-weight: bold;' : ''}">${s.accidentalActivations}</td>
+        </tr>
+      `).join('');
+    }
+
+    // Exporters
+    document.getElementById('btnExportCSV').addEventListener('click', () => {
+      const csv = exportTelemetryToCSV(logger.getAllLogs());
+      downloadBlob(csv, `chaos_lab_telemetry_${Date.now()}.csv`, 'text/csv');
+    });
+
+    document.getElementById('btnExportJSON').addEventListener('click', () => {
+      const json = exportTelemetryToJSON(logger.getAllLogs());
+      downloadBlob(json, `chaos_lab_telemetry_${Date.now()}.json`, 'application/json');
+    });
+
+    document.getElementById('btnClearData').addEventListener('click', () => {
+      if (confirm('Clear all logged benchmark telemetry?')) {
+        logger.clear();
+        renderMetricsTable();
+      }
+    });
+
+    function downloadBlob(content, filename, contentType) {
+      const blob = new Blob([content], { type: contentType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    renderMetricsTable();
+  </script>
+</body>
+</html>

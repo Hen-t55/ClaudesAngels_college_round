@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { memoryTransport } from '../../src/shared/bus';
-import type { HeadEvent, Quadrant, HeadMode } from '../../src/shared/contract';
+import type { HeadEvent, Quadrant, HeadMode, ImpairmentConfig } from '../../src/shared/contract';
 import { createHeadModule, VisionModuleHandle } from '../../src/sidepanel/vision';
 
 export function VisionDevHarness() {
@@ -13,29 +13,42 @@ export function VisionDevHarness() {
   const [isSimulator, setIsSimulator] = useState(false);
   const [mode, setModeState] = useState<HeadMode>('quadrant');
 
-  // Tuning sliders
+  // Tuning parameters
   const [minCutoff, setMinCutoff] = useState(1.0);
   const [beta, setBeta] = useState(0.007);
   const [gain, setGain] = useState(2.2);
   const [deadzone, setDeadzone] = useState(0.02);
-  const [flickVel, setFlickVel] = useState(2.2);
-  const [nodDelta, setNodDelta] = useState(0.08);
-  const [shakeDelta, setShakeDelta] = useState(0.10);
 
-  // Live telemetry & Counters
-  const [fps, setFps] = useState(0);
+  // Setup Wizard state
+  const [setupState, setSetupState] = useState<{ step: string; progress: number; prompt: string; ok?: boolean } | null>(null);
+
+  // Quality metrics state
+  const [quality, setQuality] = useState<{ jitter: number; brightness: number; faceConf: number; fps: number }>({
+    jitter: 0,
+    brightness: 0.85,
+    faceConf: 0.95,
+    fps: 0,
+  });
+
+  // Impairment controls state
+  const [impairment, setImpairment] = useState<ImpairmentConfig>({
+    seed: 42,
+    tremorAmp: 0.05,
+    tremorHz: [6, 10],
+    brightness: 0.7,
+    dropFramePct: 0,
+  });
+  const [isImpairmentActive, setIsImpairmentActive] = useState(false);
+
+  // Recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordedJSON, setRecordedJSON] = useState<string | null>(null);
+
+  // Live telemetry
   const [activeQuadrant, setActiveQuadrant] = useState<Quadrant | null>(null);
   const [isStable, setIsStable] = useState(false);
   const [isFacing, setIsFacing] = useState(true);
   const [pointer, setPointer] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
-
-  const [counters, setCounters] = useState({
-    flicks: 0,
-    nods: 0,
-    shakes: 0,
-    facingChanges: 0,
-  });
-
   const [eventLog, setEventLog] = useState<{ id: number; text: string; ts: string }[]>([]);
 
   useEffect(() => {
@@ -59,26 +72,23 @@ export function VisionDevHarness() {
           break;
         case 'head.facing':
           setIsFacing(evt.facing);
-          setCounters((prev) => ({ ...prev, facingChanges: prev.facingChanges + 1 }));
           desc = `Facing -> ${evt.facing ? 'LOOKING AT SCREEN' : 'LOOK-AWAY / LOST'}`;
           break;
         case 'head.flick':
-          setCounters((prev) => ({ ...prev, flicks: prev.flicks + 1 }));
           desc = `⚡ FLICK (${evt.dir.toUpperCase()})`;
           break;
         case 'head.nod':
-          setCounters((prev) => ({ ...prev, nods: prev.nods + 1 }));
           desc = `✅ NOD (Yes)`;
           break;
         case 'head.shake':
-          setCounters((prev) => ({ ...prev, shakes: prev.shakes + 1 }));
           desc = `❌ SHAKE (No)`;
           break;
         case 'head.quality':
-          setFps(evt.fps);
+          setQuality({ jitter: evt.jitter, brightness: evt.brightness, faceConf: evt.faceConf, fps: evt.fps });
           return;
         case 'head.setup':
-          desc = `Setup: ${evt.step} - ${evt.prompt}`;
+          setSetupState({ step: evt.step, progress: evt.progress, prompt: evt.prompt, ok: evt.ok });
+          desc = `🛠️ SETUP [${evt.step.toUpperCase()}]: ${evt.prompt}`;
           break;
       }
 
@@ -112,34 +122,27 @@ export function VisionDevHarness() {
     setIsCameraStarted(false);
   };
 
-  const handleToggleSimulator = (enabled: boolean) => {
+  const handleStartSetup = () => {
     if (!moduleHandleRef.current) return;
-    setIsSimulator(enabled);
-    moduleHandleRef.current.setSimulatorActive(enabled);
+    moduleHandleRef.current.tracker.startSetup(performance.now());
   };
 
-  const handleSetMode = (newMode: HeadMode) => {
-    setModeState(newMode);
-    moduleHandleRef.current?.tracker.setMode(newMode);
+  const handleToggleImpairment = (active: boolean) => {
+    setIsImpairmentActive(active);
+    moduleHandleRef.current?.tracker.setImpairment(active ? impairment : null);
   };
 
-  const updateTrackerParams = (
-    newMinCutoff = minCutoff,
-    newBeta = beta,
-    newGain = gain,
-    newDeadzone = deadzone,
-    newFlickVel = flickVel,
-    newNodDelta = nodDelta,
-    newShakeDelta = shakeDelta
-  ) => {
+  const handleStartRecording = () => {
     if (!moduleHandleRef.current) return;
-    const tracker = moduleHandleRef.current.tracker;
-    tracker.setFilterParams(newMinCutoff, newBeta, newGain, newDeadzone);
-    tracker.gestureAnalyzer.setConfig({
-      flickVelocityThreshold: newFlickVel,
-      nodDeltaThreshold: newNodDelta,
-      shakeDeltaThreshold: newShakeDelta,
-    });
+    moduleHandleRef.current.tracker.poseRecorder.startRecording(performance.now());
+    setIsRecording(true);
+  };
+
+  const handleStopRecording = () => {
+    if (!moduleHandleRef.current) return;
+    const jsonStr = moduleHandleRef.current.tracker.poseRecorder.exportJSON(performance.now());
+    setRecordedJSON(jsonStr);
+    setIsRecording(false);
   };
 
   const requestCanvasRender = () => {
@@ -165,153 +168,157 @@ export function VisionDevHarness() {
   };
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', padding: 24, backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh' }}>
-      <header style={{ marginBottom: 20, borderBottom: '1px solid #334155', paddingBottom: 12 }}>
-        <h1 style={{ margin: 0, fontSize: 26, color: '#38bdf8' }}>🎥 Handsfree Vision Dev Harness (P1 - Prompt 3)</h1>
-        <p style={{ margin: '6px 0 0 0', color: '#94a3b8' }}>
-          Pointer Gain/Deadzone, Quadrant Hysteresis, Dwell Stability, and Gesture Counters
+    <div style={{ fontFamily: 'system-ui, sans-serif', padding: 20, backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh' }}>
+      <header style={{ marginBottom: 16, borderBottom: '1px solid #334155', paddingBottom: 10 }}>
+        <h1 style={{ margin: 0, fontSize: 24, color: '#38bdf8' }}>🎥 Vision Dev Harness (P1 - Prompt 4)</h1>
+        <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: 13 }}>
+          Setup Wizard, Quality Signals, Seeded Impairments & Pose Session Recorder
         </p>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 420px', gap: 20 }}>
-        {/* Left Column: Viewport & Hysteresis Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 440px', gap: 16 }}>
+        {/* Left Column: Viewport & Setup Wizard */}
         <div>
           {/* Controls Bar */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 10, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             {!isCameraStarted ? (
-              <button onClick={handleStartCamera} style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>
+              <button onClick={handleStartCamera} style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
                 ▶ Start Webcam
               </button>
             ) : (
-              <button onClick={handleStopCamera} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>
+              <button onClick={handleStopCamera} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
                 ⏹ Stop Webcam
               </button>
             )}
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', background: '#1e293b', padding: '6px 12px', borderRadius: 6, fontSize: 13 }}>
-              <input type="checkbox" checked={isSimulator} onChange={(e) => handleToggleSimulator(e.target.checked)} />
-              <span>🎮 Simulator</span>
-            </label>
-
-            <button onClick={() => moduleHandleRef.current?.tracker.recenter()} style={{ background: '#334155', color: '#f8fafc', border: 'none', padding: '8px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
-              🎯 Recenter Baseline
+            <button onClick={handleStartSetup} style={{ background: '#8b5cf6', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              🛠️ Start Setup Wizard
             </button>
 
-            {/* Mode selector */}
-            <div style={{ display: 'flex', background: '#1e293b', borderRadius: 6, overflow: 'hidden', border: '1px solid #334155' }}>
-              {(['quadrant', 'locked', 'off'] as HeadMode[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => handleSetMode(m)}
-                  style={{
-                    background: mode === m ? '#0284c7' : 'transparent',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '6px 10px',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {m.toUpperCase()}
-                </button>
-              ))}
-            </div>
+            {!isRecording ? (
+              <button onClick={handleStartRecording} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                🔴 Record Pose Session
+              </button>
+            ) : (
+              <button onClick={handleStopRecording} style={{ background: '#f59e0b', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+                ⏹ Stop & Export JSON
+              </button>
+            )}
           </div>
 
-          {/* 2x2 Viewport with Hysteresis Band Overlay */}
-          <div style={{ position: 'relative', width: '100%', height: 460, backgroundColor: '#020617', borderRadius: 12, overflow: 'hidden', border: '2px solid #334155' }}>
+          {/* Setup Wizard Progress Display */}
+          {setupState && (
+            <div style={{ background: '#1e1b4b', border: '1px solid #6366f1', padding: 12, borderRadius: 8, marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
+                <span style={{ color: '#a5b4fc' }}>Setup Step: {setupState.step.toUpperCase()}</span>
+                <span>{(setupState.progress * 100).toFixed(0)}%</span>
+              </div>
+              <div style={{ background: '#312e81', height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 6 }}>
+                <div style={{ background: '#818cf8', width: `${setupState.progress * 100}%`, height: '100%', transition: 'width 0.3s' }} />
+              </div>
+              <div style={{ fontSize: 13, color: setupState.ok === false ? '#f87171' : '#e0e7ff' }}>
+                {setupState.prompt}
+              </div>
+            </div>
+          )}
+
+          {/* 2x2 Viewport */}
+          <div style={{ position: 'relative', width: '100%', height: 420, backgroundColor: '#020617', borderRadius: 10, overflow: 'hidden', border: '2px solid #334155' }}>
             <video ref={videoRef} style={{ display: 'none' }} />
             <canvas ref={canvasRef} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isCameraStarted ? 0.7 : 0.2 }} />
 
-            {/* Hysteresis Band (0.45 to 0.55 zone) */}
-            <div style={{ position: 'absolute', left: '45%', width: '10%', top: 0, bottom: 0, backgroundColor: 'rgba(234, 179, 8, 0.08)', borderLeft: '1px dotted #eab308', borderRight: '1px dotted #eab308', pointerEvents: 'none' }} />
-            <div style={{ position: 'absolute', top: '45%', height: '10%', left: 0, right: 0, backgroundColor: 'rgba(234, 179, 8, 0.08)', borderTop: '1px dotted #eab308', borderBottom: '1px dotted #eab308', pointerEvents: 'none' }} />
-
             {/* Quadrants Grid */}
             <div style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', pointerEvents: 'none' }}>
-              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'TL' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', padding: 10, fontWeight: 700, color: activeQuadrant === 'TL' ? '#38bdf8' : '#64748b' }}>
-                TOP_LEFT (TL) [Q] {activeQuadrant === 'TL' && (isStable ? '✓ STABLE' : '⌛ DWELLING...')}
+              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'TL' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', padding: 8, fontWeight: 700, color: activeQuadrant === 'TL' ? '#38bdf8' : '#64748b' }}>
+                TL {activeQuadrant === 'TL' && (isStable ? '✓ STABLE' : '⌛ DWELL')}
               </div>
-              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'TR' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', textAlign: 'right', padding: 10, fontWeight: 700, color: activeQuadrant === 'TR' ? '#38bdf8' : '#64748b' }}>
-                TOP_RIGHT (TR) [E] {activeQuadrant === 'TR' && (isStable ? '✓ STABLE' : '⌛ DWELLING...')}
+              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'TR' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', textAlign: 'right', padding: 8, fontWeight: 700, color: activeQuadrant === 'TR' ? '#38bdf8' : '#64748b' }}>
+                TR {activeQuadrant === 'TR' && (isStable ? '✓ STABLE' : '⌛ DWELL')}
               </div>
-              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'BL' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', display: 'flex', alignItems: 'flex-end', padding: 10, fontWeight: 700, color: activeQuadrant === 'BL' ? '#38bdf8' : '#64748b' }}>
-                BOTTOM_LEFT (BL) [Z] {activeQuadrant === 'BL' && (isStable ? '✓ STABLE' : '⌛ DWELLING...')}
+              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'BL' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', display: 'flex', alignItems: 'flex-end', padding: 8, fontWeight: 700, color: activeQuadrant === 'BL' ? '#38bdf8' : '#64748b' }}>
+                BL {activeQuadrant === 'BL' && (isStable ? '✓ STABLE' : '⌛ DWELL')}
               </div>
-              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'BR' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: 10, fontWeight: 700, color: activeQuadrant === 'BR' ? '#38bdf8' : '#64748b' }}>
-                BOTTOM_RIGHT (BR) [C] {activeQuadrant === 'BR' && (isStable ? '✓ STABLE' : '⌛ DWELLING...')}
+              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'BR' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: 8, fontWeight: 700, color: activeQuadrant === 'BR' ? '#38bdf8' : '#64748b' }}>
+                BR {activeQuadrant === 'BR' && (isStable ? '✓ STABLE' : '⌛ DWELL')}
               </div>
             </div>
 
             {/* Pointer Dot */}
-            <div style={{ position: 'absolute', left: `${pointer.x * 100}%`, top: `${pointer.y * 100}%`, width: 16, height: 16, borderRadius: '50%', backgroundColor: '#f43f5e', boxShadow: '0 0 10px #f43f5e', transform: 'translate(-50%, -50%)', pointerEvents: 'none' }} />
-          </div>
-
-          {/* Gesture Counters Dashboard */}
-          <div style={{ marginTop: 14, background: '#1e293b', padding: 12, borderRadius: 8, border: '1px solid #334155' }}>
-            <h4 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#38bdf8' }}>📊 Gesture Counters</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, textAlign: 'center' }}>
-              <div style={{ background: '#090d16', padding: 8, borderRadius: 6 }}><div style={{ fontSize: 11, color: '#94a3b8' }}>⚡ Flicks</div><div style={{ fontSize: 18, fontWeight: 700, color: '#38bdf8' }}>{counters.flicks}</div></div>
-              <div style={{ background: '#090d16', padding: 8, borderRadius: 6 }}><div style={{ fontSize: 11, color: '#94a3b8' }}>✅ Nods</div><div style={{ fontSize: 18, fontWeight: 700, color: '#4ade80' }}>{counters.nods}</div></div>
-              <div style={{ background: '#090d16', padding: 8, borderRadius: 6 }}><div style={{ fontSize: 11, color: '#94a3b8' }}>❌ Shakes</div><div style={{ fontSize: 18, fontWeight: 700, color: '#f43f5e' }}>{counters.shakes}</div></div>
-              <div style={{ background: '#090d16', padding: 8, borderRadius: 6 }}><div style={{ fontSize: 11, color: '#94a3b8' }}>👀 Look-Away</div><div style={{ fontSize: 18, fontWeight: 700, color: '#fbbf24' }}>{counters.facingChanges}</div></div>
-            </div>
+            <div style={{ position: 'absolute', left: `${pointer.x * 100}%`, top: `${pointer.y * 100}%`, width: 14, height: 14, borderRadius: '50%', backgroundColor: '#f43f5e', boxShadow: '0 0 10px #f43f5e', transform: 'translate(-50%, -50%)', pointerEvents: 'none' }} />
           </div>
         </div>
 
-        {/* Right Column: Tuning Controls & Event Log */}
+        {/* Right Column: Quality & Impairments */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* Sliders Panel */}
-          <div style={{ background: '#1e293b', padding: 14, borderRadius: 8, border: '1px solid #334155', fontSize: 12 }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: 15, color: '#f8fafc' }}>🎛️ Pointer & Gesture Tuning</h3>
-
-            {/* Gain Slider */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                <span>Pointer Gain:</span><b>{gain.toFixed(1)}x</b>
+          {/* Quality Metrics Panel */}
+          <div style={{ background: '#1e293b', padding: 12, borderRadius: 8, border: '1px solid #334155' }}>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#38bdf8' }}>📊 Live Quality Metrics (head.quality ~500ms)</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, textAlign: 'center', fontSize: 12 }}>
+              <div style={{ background: '#090d16', padding: 6, borderRadius: 6 }}>
+                <div style={{ color: '#94a3b8' }}>FPS</div>
+                <div style={{ fontWeight: 700, color: quality.fps >= 30 ? '#4ade80' : '#f87171' }}>{quality.fps}</div>
               </div>
-              <input type="range" min="0.5" max="5.0" step="0.1" value={gain} onChange={(e) => { const v = parseFloat(e.target.value); setGain(v); updateTrackerParams(minCutoff, beta, v, deadzone); }} style={{ width: '100%' }} />
-            </div>
-
-            {/* Deadzone Slider */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                <span>Deadzone Radius:</span><b>{deadzone.toFixed(3)} rad</b>
+              <div style={{ background: '#090d16', padding: 6, borderRadius: 6 }}>
+                <div style={{ color: '#94a3b8' }}>Jitter</div>
+                <div style={{ fontWeight: 700, color: '#38bdf8' }}>{quality.jitter.toFixed(3)}</div>
               </div>
-              <input type="range" min="0.00" max="0.10" step="0.005" value={deadzone} onChange={(e) => { const v = parseFloat(e.target.value); setDeadzone(v); updateTrackerParams(minCutoff, beta, gain, v); }} style={{ width: '100%' }} />
-            </div>
-
-            {/* minCutoff Slider */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                <span>OneEuro minCutoff:</span><b>{minCutoff.toFixed(2)} Hz</b>
+              <div style={{ background: '#090d16', padding: 6, borderRadius: 6 }}>
+                <div style={{ color: '#94a3b8' }}>Luma</div>
+                <div style={{ fontWeight: 700, color: '#fbbf24' }}>{(quality.brightness * 100).toFixed(0)}%</div>
               </div>
-              <input type="range" min="0.1" max="5.0" step="0.1" value={minCutoff} onChange={(e) => { const v = parseFloat(e.target.value); setMinCutoff(v); updateTrackerParams(v, beta); }} style={{ width: '100%' }} />
-            </div>
-
-            {/* Flick Velocity Slider */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                <span>Flick Velocity Threshold:</span><b>{flickVel.toFixed(1)} rad/s</b>
+              <div style={{ background: '#090d16', padding: 6, borderRadius: 6 }}>
+                <div style={{ color: '#94a3b8' }}>Face Conf</div>
+                <div style={{ fontWeight: 700, color: '#4ade80' }}>{(quality.faceConf * 100).toFixed(0)}%</div>
               </div>
-              <input type="range" min="1.0" max="5.0" step="0.1" value={flickVel} onChange={(e) => { const v = parseFloat(e.target.value); setFlickVel(v); updateTrackerParams(minCutoff, beta, gain, deadzone, v); }} style={{ width: '100%' }} />
             </div>
           </div>
 
-          {/* Live Event Log */}
-          <div style={{ background: '#1e293b', padding: 14, borderRadius: 8, border: '1px solid #334155', flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: 15, color: '#f8fafc' }}>📜 Live Event Stream</h3>
-            <div style={{ flex: 1, overflowY: 'auto', maxHeight: 220, background: '#090d16', padding: 8, borderRadius: 6, fontSize: 11, fontFamily: 'monospace' }}>
-              {eventLog.length === 0 ? (
-                <div style={{ color: '#64748b' }}>No events recorded...</div>
-              ) : (
-                eventLog.map((log) => (
-                  <div key={log.id} style={{ marginBottom: 3, color: '#38bdf8' }}>
-                    <span style={{ color: '#64748b' }}>[{log.ts}]</span> {log.text}
-                  </div>
-                ))
-              )}
+          {/* Seeded Impairments Controls */}
+          <div style={{ background: '#1e293b', padding: 12, borderRadius: 8, border: '1px solid #334155', fontSize: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 14, color: '#f8fafc' }}>🧪 Seeded Impairment Controls</h3>
+              <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input type="checkbox" checked={isImpairmentActive} onChange={(e) => handleToggleImpairment(e.target.checked)} />
+                <span style={{ fontWeight: 600, color: isImpairmentActive ? '#f43f5e' : '#94a3b8' }}>Active</span>
+              </label>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <div>
+                <label>PRNG Seed:</label>
+                <input type="number" value={impairment.seed} onChange={(e) => setImpairment({ ...impairment, seed: parseInt(e.target.value) || 0 })} style={{ width: '100%', background: '#090d16', border: '1px solid #334155', color: '#fff', padding: 4, borderRadius: 4 }} />
+              </div>
+              <div>
+                <label>Tremor Amp:</label>
+                <input type="number" step="0.01" value={impairment.tremorAmp} onChange={(e) => setImpairment({ ...impairment, tremorAmp: parseFloat(e.target.value) || 0 })} style={{ width: '100%', background: '#090d16', border: '1px solid #334155', color: '#fff', padding: 4, borderRadius: 4 }} />
+              </div>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Drop Frame %:</span><b>{impairment.dropFramePct}%</b>
+              </div>
+              <input type="range" min="0" max="80" step="5" value={impairment.dropFramePct} onChange={(e) => setImpairment({ ...impairment, dropFramePct: parseInt(e.target.value) || 0 })} style={{ width: '100%' }} />
+            </div>
+          </div>
+
+          {/* Recorded JSON Session Data */}
+          {recordedJSON && (
+            <div style={{ background: '#1e293b', padding: 12, borderRadius: 8, border: '1px solid #334155' }}>
+              <h4 style={{ margin: '0 0 6px 0', fontSize: 13, color: '#10b981' }}>Recorded Pose JSON Ready</h4>
+              <textarea readOnly value={recordedJSON} style={{ width: '100%', height: 70, background: '#090d16', color: '#a7f3d0', border: '1px solid #334155', borderRadius: 4, fontSize: 10, fontFamily: 'monospace' }} />
+            </div>
+          )}
+
+          {/* Live Event Stream */}
+          <div style={{ background: '#1e293b', padding: 12, borderRadius: 8, border: '1px solid #334155', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: 14, color: '#f8fafc' }}>📜 Event Log</h3>
+            <div style={{ flex: 1, overflowY: 'auto', maxHeight: 180, background: '#090d16', padding: 6, borderRadius: 4, fontSize: 11, fontFamily: 'monospace' }}>
+              {eventLog.map((log) => (
+                <div key={log.id} style={{ marginBottom: 2, color: '#38bdf8' }}>
+                  <span style={{ color: '#64748b' }}>[{log.ts}]</span> {log.text}
+                </div>
+              ))}
             </div>
           </div>
         </div>
