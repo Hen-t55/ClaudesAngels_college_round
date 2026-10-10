@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Handsfree Demo: Dense Link Directory</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      padding: 30px 20px;
+    }
+    .container { max-width: 1000px; margin: 0 auto; }
+    header {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 16px;
+    }
+    h1 { font-size: 24px; font-weight: 800; }
+    .back { color: #2563eb; text-decoration: none; font-weight: 600; font-size: 14px; }
+    .info-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: #1e40af;
+    }
+    .columns {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .col-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .col-title {
+      font-size: 14px;
+      font-weight: 800;
+      color: #0284c7;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+    ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    li a {
+      color: #2563eb;
+      text-decoration: none;
+      font-size: 13px;
+      display: inline-block;
+      padding: 2px 4px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    li a:hover {
+      background: #e0f2fe;
+      text-decoration: underline;
+    }
+    .log-box {
+      background: #0f172a;
+      color: #38bdf8;
+      border-radius: 8px;
+      padding: 16px;
+      font-family: monospace;
+      font-size: 13px;
+      min-height: 80px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🔗 Dense Link Directory Test</h1>
+      <a href="index.html" class="back">&larr; Back to Portal</a>
+    </header>
+
+    <div class="info-box">
+      <strong>Handsfree Evaluation Context:</strong> Stress-tests the <strong>Collision-Aware Badge Placement</strong> algorithm.
+      <br>When many adjacent links match, badges must intelligently offset without overlapping each other or clipping out of the viewport.
+    </div>
+
+    <div class="columns">
+      <div class="col-card">
+        <div class="col-title">Engineering & Docs</div>
+        <ul>
+          <li><a href="#" onclick="clickLink('Architecture Guide')">Architecture Guide</a></li>
+          <li><a href="#" onclick="clickLink('API Reference')">API Reference</a></li>
+          <li><a href="#" onclick="clickLink('SDK Downloads')">SDK Downloads</a></li>
+          <li><a href="#" onclick="clickLink('Release Notes v2.4')">Release Notes v2.4</a></li>
+          <li><a href="#" onclick="clickLink('Changelog Summary')">Changelog Summary</a></li>
+          <li><a href="#" onclick="clickLink('TypeScript Typings')">TypeScript Typings</a></li>
+          <li><a href="#" onclick="clickLink('WebAssembly Runtime')">WebAssembly Runtime</a></li>
+          <li><a href="#" onclick="clickLink('Performance Benchmarks')">Performance Benchmarks</a></li>
+        </ul>
+      </div>
+
+      <div class="col-card">
+        <div class="col-title">Platform Features</div>
+        <ul>
+          <li><a href="#" onclick="clickLink('Head Pose Tracker')">Head Pose Tracker</a></li>
+          <li><a href="#" onclick="clickLink('Speech Recognition')">Speech Recognition</a></li>
+          <li><a href="#" onclick="clickLink('DOM Scoped Resolver')">DOM Scoped Resolver</a></li>
+          <li><a href="#" onclick="clickLink('2-Gear Shifter')">2-Gear Shifter</a></li>
+          <li><a href="#" onclick="clickLink('Hop Mode Gestures')">Hop Mode Gestures</a></li>
+          <li><a href="#" onclick="clickLink('Voice Badge Shifter')">Voice Badge Shifter</a></li>
+          <li><a href="#" onclick="clickLink('Fallback Zoom Ladder')">Fallback Zoom Ladder</a></li>
+          <li><a href="#" onclick="clickLink('Confirmation Banner')">Confirmation Banner</a></li>
+        </ul>
+      </div>
+
+      <div class="col-card">
+        <div class="col-title">Community & Support</div>
+        <ul>
+          <li><a href="#" onclick="clickLink('Discussion Forum')">Discussion Forum</a></li>
+          <li><a href="#" onclick="clickLink('GitHub Repository')">GitHub Repository</a></li>
+          <li><a href="#" onclick="clickLink('Issue Tracker')">Issue Tracker</a></li>
+          <li><a href="#" onclick="clickLink('Security Advisories')">Security Advisories</a></li>
+          <li><a href="#" onclick="clickLink('Developer Slack')">Developer Slack</a></li>
+          <li><a href="#" onclick="clickLink('Discord Server')">Discord Server</a></li>
+          <li><a href="#" onclick="clickLink('Weekly Office Hours')">Weekly Office Hours</a></li>
+          <li><a href="#" onclick="clickLink('Frequently Asked Questions')">Frequently Asked Questions</a></li>
+        </ul>
+      </div>
+
+      <div class="col-card">
+        <div class="col-title">Legal & Company</div>
+        <ul>
+          <li><a href="#" onclick="clickLink('Privacy Statement')">Privacy Statement</a></li>
+          <li><a href="#" onclick="clickLink('Terms of Service')">Terms of Service</a></li>
+          <li><a href="#" onclick="clickLink('Accessibility Statement')">Accessibility Statement</a></li>
+          <li><a href="#" onclick="clickLink('Cookie Preferences')">Cookie Preferences</a></li>
+          <li><a href="#" onclick="clickLink('GDPR Compliance')">GDPR Compliance</a></li>
+          <li><a href="#" onclick="clickLink('Security Disclosures')">Security Disclosures</a></li>
+          <li><a href="#" onclick="clickLink('Press Kit Assets')">Press Kit Assets</a></li>
+          <li><a href="#" onclick="clickLink('Contact Team')">Contact Team</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 style="font-size: 16px; margin-bottom: 8px;">Link Navigation Log:</h2>
+    <div id="log" class="log-box">Ready. Say or click any link title...</div>
+  </div>
+
+  <script>
+    function clickLink(name) {
+      const log = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      log.innerHTML = `[${time}] SELECTED LINK: "${name}"<br>` + log.innerHTML;
+      return false;
+    }
+  </script>
+</body>
+</html>

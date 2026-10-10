@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Embedded Iframe Document</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .btn {
+      padding: 8px 14px;
+      border-radius: 6px;
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h3 style="font-size: 16px; margin-bottom: 6px;">Inside Same-Origin Iframe</h3>
+    <p style="font-size: 13px; color: #64748b; margin-bottom: 10px;">
+      This button lives inside the iframe document DOM tree.
+    </p>
+    <button class="btn" id="iframe-action-btn" onclick="handleClick()">Iframe Action Button</button>
+    <div id="iframe-msg" style="display: none; margin-top: 8px; font-size: 12px; color: #16a34a; font-weight: 600;">
+      ✓ Triggered from inside iframe!
+    </div>
+  </div>
+
+  <script>
+    function handleClick() {
+      const msg = document.getElementById('iframe-msg');
+      msg.style.display = 'block';
+      window.parent.postMessage({ type: 'iframe-clicked', time: new Date().toLocaleTimeString() }, '*');
+    }
+  </script>
+</body>
+</html>

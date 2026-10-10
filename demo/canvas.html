@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Handsfree Demo: Canvas with Clickable Targets</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 30px 20px;
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+    header {
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 16px;
+    }
+    h1 { font-size: 24px; font-weight: 800; }
+    .back { color: #38bdf8; text-decoration: none; font-weight: 600; font-size: 14px; }
+    .info-box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: #94a3b8;
+    }
+    .canvas-wrapper {
+      background: #1e293b;
+      border: 2px solid #334155;
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    canvas {
+      background: #020617;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      cursor: crosshair;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    .log-box {
+      background: #020617;
+      color: #38bdf8;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 16px;
+      font-family: monospace;
+      font-size: 13px;
+      min-height: 90px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎯 Canvas Clickable Targets (Fallback Ladder)</h1>
+      <a href="index.html" class="back">&larr; Back to Portal</a>
+    </header>
+
+    <div class="info-box">
+      <strong>Handsfree Evaluation Context:</strong> The targets below are drawn inside a single HTML5 <code>&lt;canvas&gt;</code> (no individual DOM nodes exist).
+      <br>Tests the <strong>Fallback Ladder</strong>:
+      <em>Quadrant &rarr; "Zoom" &rarr; Say sub-cell numbers (1–9) &rarr; "Click"</em> fires center coordinate on the canvas target.
+    </div>
+
+    <div class="canvas-wrapper">
+      <canvas id="target-canvas" width="800" height="450"></canvas>
+      <p style="margin-top: 10px; font-size: 13px; color: #64748b;">
+        Canvas size: 800 x 450 px • Click any target directly or use Handsfree Zoom Grid
+      </p>
+    </div>
+
+    <h2 style="font-size: 16px; margin-bottom: 8px;">Canvas Click Event Log:</h2>
+    <div id="log" class="log-box">Ready. Click anywhere on canvas...</div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('target-canvas');
+    const ctx = canvas.getContext('2d');
+
+    // 6 interactive non-DOM targets
+    const targets = [
+      { id: 'Seat A1', x: 120, y: 100, r: 35, color: '#38bdf8', hit: false },
+      { id: 'Seat A2', x: 260, y: 100, r: 35, color: '#38bdf8', hit: false },
+      { id: 'Seat B1', x: 540, y: 100, r: 35, color: '#38bdf8', hit: false },
+      { id: 'Seat B2', x: 680, y: 100, r: 35, color: '#38bdf8', hit: false },
+      { id: 'Stage Center', x: 400, y: 300, r: 50, color: '#f59e0b', hit: false },
+      { id: 'Exit Gate', x: 700, y: 380, r: 30, color: '#ef4444', hit: false },
+    ];
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Grid background
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < canvas.width; x += 50) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += 50) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+      }
+
+      // Draw targets
+      for (const t of targets) {
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2);
+        ctx.fillStyle = t.hit ? '#10b981' : t.color;
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(t.hit ? 'HIT!' : t.id, t.x, t.y);
+      }
+    }
+
+    draw();
+
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      let hitTarget = null;
+      for (const t of targets) {
+        const dist = Math.hypot(clickX - t.x, clickY - t.y);
+        if (dist <= t.r) {
+          t.hit = true;
+          hitTarget = t;
+          setTimeout(() => { t.hit = false; draw(); }, 1200);
+          break;
+        }
+      }
+
+      draw();
+
+      const log = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      const status = hitTarget
+        ? `<strong style="color: #4ade80;">HIT TARGET: [${hitTarget.id}]</strong>`
+        : `<span style="color: #94a3b8;">MISS</span>`;
+      const line = `[${time}] Click at (${Math.round(clickX)}, ${Math.round(clickY)}) &rarr; ${status}`;
+      log.innerHTML = line + '<br>' + log.innerHTML;
+    });
+  </script>
+</body>
+</html>
