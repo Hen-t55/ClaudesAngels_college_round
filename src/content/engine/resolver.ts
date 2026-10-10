@@ -156,11 +156,22 @@ export class Resolver {
     );
 
     const fuse = new Fuse(candidates, {
-      keys: ['label'],
+      keys: [
+        { name: 'label', weight: 0.7 },
+        { name: 'element.placeholder', weight: 0.5 },
+        { name: 'element.aria-label', weight: 0.5 },
+        { name: 'element.name', weight: 0.4 },
+      ],
       includeScore: true,
       threshold: 0.6,
       ignoreLocation: true,
-      getFn: (obj: IndexedElement) => normalizeLabel(obj.label),
+      getFn: (obj: IndexedElement, path: string | string[]) => {
+        if (Array.isArray(path) && path[0] === 'element') {
+          const attr = path[1];
+          return normalizeLabel(obj.element.getAttribute(attr) || '');
+        }
+        return normalizeLabel(obj.label);
+      },
     });
 
     const results = fuse.search(normalizedQuery);
@@ -204,11 +215,12 @@ export class Resolver {
   public static resolve(
     allCandidates: IndexedElement[],
     query: TargetQuery,
-    scope: Scope
+    scope: Scope,
+    verb?: Verb
   ): ResolveResult {
     // 1. First attempt in given scope
     const scopedCandidates = Resolver.filterByScope(allCandidates, scope);
-    const resultInScope = Resolver.resolveInList(scopedCandidates, query);
+    const resultInScope = Resolver.resolveInList(scopedCandidates, query, verb);
 
     if (resultInScope.status !== 'none') {
       return { ...resultInScope, widened: false };
@@ -217,7 +229,7 @@ export class Resolver {
     // 2. Fallback widening: If scoped to quadrant, widen to whole page
     if (scope.k === 'quadrant') {
       const pageCandidates = Resolver.filterByScope(allCandidates, { k: 'page' });
-      const widenedResult = Resolver.resolveInList(pageCandidates, query);
+      const widenedResult = Resolver.resolveInList(pageCandidates, query, verb);
       if (widenedResult.status !== 'none') {
         return { ...widenedResult, widened: true };
       }
@@ -228,9 +240,36 @@ export class Resolver {
 
   private static resolveInList(
     candidates: IndexedElement[],
-    query: TargetQuery
+    query: TargetQuery,
+    verb?: Verb
   ): { status: 'one' | 'many' | 'none'; matches: IndexedElement[] } {
     let filtered = Resolver.filterByRoleAndColor(candidates, query);
+
+    if (verb === 'search') {
+      const searchCandidates = filtered.filter(c => {
+        const el = c.element;
+        const role = el.getAttribute('role') || '';
+        const type = el.getAttribute('type') || '';
+        const name = (el.getAttribute('name') || '').toLowerCase();
+        const placeholder = (el.getAttribute('placeholder') || '').toLowerCase();
+        const className = (el.getAttribute('class') || '').toLowerCase();
+        const id = (el.getAttribute('id') || '').toLowerCase();
+        const searchForm = el.closest('form[role="search"], form.search, form#search, form[action*="search"]');
+
+        return (
+          role === 'search' || role === 'searchbox' ||
+          type === 'search' ||
+          name.includes('search') || name === 'q' ||
+          placeholder.includes('search') || placeholder === 'q' ||
+          className.includes('search') || id.includes('search') ||
+          searchForm !== null
+        );
+      });
+      if (searchCandidates.length > 0) {
+        filtered = searchCandidates;
+      }
+    }
+
     filtered = Resolver.filterBySide(filtered, query.side);
 
     // If ordinal specified (nth/last), apply directly

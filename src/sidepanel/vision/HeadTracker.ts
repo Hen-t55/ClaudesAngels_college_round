@@ -4,7 +4,11 @@ import { PointerMapper } from './PointerMapper';
 import { QuadrantClassifier } from './QuadrantClassifier';
 import { GestureAnalyzer } from './GestureAnalyzer';
 import { FacingDetector } from './FacingDetector';
-import type { HeadEvent, HeadMode, Dir, ImpairmentConfig } from '../../shared/contract';
+import { ImpairmentInjector } from './ImpairmentInjector';
+import { QualityMonitor } from './QualityMonitor';
+import { SetupManager } from './SetupManager';
+import { PoseRecorder } from './PoseRecorder';
+import type { HeadEvent, HeadMode, ImpairmentConfig } from '../../shared/contract';
 
 export interface HeadTrackerOptions {
   wasmPath?: string;
@@ -33,14 +37,13 @@ export class HeadTracker {
   public quadrantClassifier = new QuadrantClassifier();
   public gestureAnalyzer = new GestureAnalyzer();
   public facingDetector = new FacingDetector();
+  public impairmentInjector = new ImpairmentInjector();
+  public qualityMonitor = new QualityMonitor();
+  public setupManager = new SetupManager();
+  public poseRecorder = new PoseRecorder();
 
-  // Diagnostics & Timing
-  private frameCount = 0;
-  private lastFpsTime = 0;
-  private currentFps = 0;
+  // Timing
   private lastPointerEmitTime = 0;
-
-  private impairment: ImpairmentConfig | null = null;
 
   constructor(private options: HeadTrackerOptions = {}) {
     const minCutoff = options.minCutoff ?? 1.0;
@@ -115,7 +118,6 @@ export class HeadTracker {
     });
 
     this.isRunning = true;
-    this.lastFpsTime = performance.now();
     this.startFrameLoop();
   }
 
@@ -145,6 +147,17 @@ export class HeadTracker {
     }
   }
 
+  public startSetup(timestampMs: number): void {
+    const sRes = this.setupManager.startSetup(timestampMs);
+    this.emit({
+      t: 'head.setup',
+      step: sRes.step,
+      progress: sRes.progress,
+      prompt: sRes.prompt,
+      ok: sRes.ok,
+    });
+  }
+
   public setFilterParams(minCutoff?: number, beta?: number, gain?: number, deadzone?: number): void {
     if (minCutoff !== undefined) {
       this.pitchFilter.setParams({ minCutoff });
@@ -162,7 +175,7 @@ export class HeadTracker {
   }
 
   public setImpairment(cfg: ImpairmentConfig | null): void {
-    this.impairment = cfg;
+    this.impairmentInjector.setConfig(cfg);
   }
 
   public onEvent(callback: (evt: HeadEvent) => void): () => void {
@@ -186,15 +199,17 @@ export class HeadTracker {
     return this.videoElement;
   }
 
-  /**
-   * Process a single timestamped frame (can be called by webcam loop or synthetic tests).
-   */
   public processFrame(result: FaceLandmarkerResult, timestampMs: number): void {
     if (this.mode === 'off') return;
 
-    const faceDetected = result.faceLandmarks && result.faceLandmarks.length > 0;
+    // Check dropped frames impairment
+    if (this.impairmentInjector.shouldDropFrame()) {
+      return;
+    }
 
-    // 1. Process Facing / Look-Away Detector (emits only on state change)
+    const faceDetected = result.faceLandmarks && result.faceLandmarks.length > 0;
+    const faceConf = faceDetected ? 0.95 : 0;
+
     let rawPitch = 0;
     let rawYaw = 0;
     let rawRoll = 0;
@@ -206,45 +221,82 @@ export class HeadTracker {
       rawRoll = angles.roll;
     }
 
-    const facingChanged = this.facingDetector.update(rawPitch, rawYaw, faceDetected, timestampMs);
+    // 1. Process Impairment (Tremor noise) BEFORE filtering
+    const impaired = this.impairmentInjector.applyTremor(
+      { pitch: rawPitch, yaw: rawYaw, roll: rawRoll },
+      timestampMs
+    );
+
+    // Record frame if PoseRecorder is active
+    this.poseRecorder.recordFrame(
+      impaired.pitch,
+      impaired.yaw,
+      impaired.roll,
+      faceDetected,
+      faceConf,
+      timestampMs
+    );
+
+    // 2. Process Setup Wizard if active
+    if (this.setupManager.isRunning()) {
+      const sRes = this.setupManager.processSample(impaired.pitch, impaired.yaw, faceDetected, timestampMs);
+      if (sRes) {
+        this.emit({
+          t: 'head.setup',
+          step: sRes.step,
+          progress: sRes.progress,
+          prompt: sRes.prompt,
+          ok: sRes.ok,
+        });
+
+        if (sRes.baselinePitch !== undefined && sRes.baselineYaw !== undefined) {
+          this.pointerMapper.recenter(sRes.baselinePitch, sRes.baselineYaw);
+        }
+        if (sRes.derivedGain !== undefined) {
+          this.pointerMapper.setConfig({ gain: sRes.derivedGain });
+        }
+      }
+    }
+
+    // 3. Process Facing / Look-Away
+    const facingChanged = this.facingDetector.update(impaired.pitch, impaired.yaw, faceDetected, timestampMs);
     if (facingChanged) {
       this.emit({ t: 'head.facing', facing: this.facingDetector.getFacing() });
     }
 
-    if (!faceDetected) {
-      this.emit({
-        t: 'head.quality',
-        jitter: 0,
-        brightness: 0.5,
-        faceConf: 0,
-        fps: this.currentFps,
-      });
-      return;
+    // 4. Quality Monitor (~500ms interval)
+    const qEvent = this.qualityMonitor.process(
+      rawPitch,
+      rawYaw,
+      faceDetected,
+      faceConf,
+      this.videoElement,
+      timestampMs
+    );
+    if (qEvent) {
+      this.emit(qEvent);
     }
 
-    // 2. Inject tremor impairment if enabled
-    const angles = this.injectTremor({ pitch: rawPitch, yaw: rawYaw, roll: rawRoll }, timestampMs);
+    if (!faceDetected) return;
 
-    // 3. One Euro Filter smoothing
-    const pitch = this.pitchFilter.filter(angles.pitch, timestampMs);
-    const yaw = this.yawFilter.filter(angles.yaw, timestampMs);
+    // 5. One Euro Filter smoothing
+    const pitch = this.pitchFilter.filter(impaired.pitch, timestampMs);
+    const yaw = this.yawFilter.filter(impaired.yaw, timestampMs);
 
-    // 4. Relative Pointer Mapping
+    // 6. Pointer mapping & emit (~30 Hz)
     const pointer = this.pointerMapper.map(pitch, yaw);
-
-    // Emit head.pointer at ~30 Hz (interval >= 28ms)
     if (timestampMs - this.lastPointerEmitTime >= 28) {
       this.emit({ t: 'head.pointer', x: pointer.x, y: pointer.y });
       this.lastPointerEmitTime = timestampMs;
     }
 
-    // 5. Quadrant Classifier (with hysteresis & 300ms stability dwell)
+    // 7. Quadrant Classification (with hysteresis & 300ms dwell)
     const qResult = this.quadrantClassifier.update(pointer.x, pointer.y, timestampMs);
     if (qResult && qResult.changed) {
       this.emit({ t: 'head.quadrant', q: qResult.q, stable: qResult.stable });
     }
 
-    // 6. Gesture Detector (Flick, Nod, Shake - active unless mode is 'off')
+    // 8. Gesture Detection (Flick, Nod, Shake)
     const gestures = this.gestureAnalyzer.process(pitch, yaw, timestampMs);
     for (const g of gestures) {
       if (g.type === 'flick') {
@@ -255,15 +307,6 @@ export class HeadTracker {
         this.emit({ t: 'head.shake' });
       }
     }
-
-    // 7. Quality metrics
-    this.emit({
-      t: 'head.quality',
-      jitter: Math.abs(pitch - rawPitch) + Math.abs(yaw - rawYaw),
-      brightness: 0.8,
-      faceConf: 0.95,
-      fps: this.currentFps,
-    });
   }
 
   private startFrameLoop(): void {
@@ -271,17 +314,8 @@ export class HeadTracker {
       if (!this.isRunning) return;
 
       if (this.videoElement && this.videoElement.readyState >= 2 && this.landmarker) {
-        if (!this.shouldDropFrame()) {
-          this.frameCount++;
-          if (now - this.lastFpsTime >= 1000) {
-            this.currentFps = Math.round((this.frameCount * 1000) / (now - this.lastFpsTime));
-            this.frameCount = 0;
-            this.lastFpsTime = now;
-          }
-
-          const result = this.landmarker.detectForVideo(this.videoElement, now);
-          this.processFrame(result, now);
-        }
+        const result = this.landmarker.detectForVideo(this.videoElement, now);
+        this.processFrame(result, now);
       }
 
       if (this.videoElement && 'requestVideoFrameCallback' in this.videoElement) {
@@ -325,27 +359,5 @@ export class HeadTracker {
     const pitch = (nose.y - (leftEye.y + chin.y) / 2) * 2.5;
 
     return { pitch, yaw, roll };
-  }
-
-  private shouldDropFrame(): boolean {
-    if (!this.impairment || this.impairment.dropFramePct <= 0) return false;
-    return Math.random() < this.impairment.dropFramePct / 100;
-  }
-
-  private injectTremor(
-    raw: { pitch: number; yaw: number; roll: number },
-    timestampMs: number
-  ): { pitch: number; yaw: number; roll: number } {
-    if (!this.impairment || this.impairment.tremorAmp <= 0) return raw;
-
-    const hz = this.impairment.tremorHz[0] || 6;
-    const amp = this.impairment.tremorAmp;
-    const phase = (timestampMs / 1000.0) * hz * 2 * Math.PI;
-
-    return {
-      pitch: raw.pitch + Math.sin(phase) * amp,
-      yaw: raw.yaw + Math.cos(phase) * amp,
-      roll: raw.roll,
-    };
   }
 }
