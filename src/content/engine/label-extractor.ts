@@ -103,7 +103,13 @@ export function extractLabel(el: Element): { raw: string; normalized: string } {
     }
   }
 
-  // 5. title
+  // 5. name attribute
+  const nameAttr = el.getAttribute('name');
+  if (nameAttr && nameAttr.trim()) {
+    return { raw: nameAttr.trim(), normalized: normalizeLabel(nameAttr) };
+  }
+
+  // 6. title
   const title = el.getAttribute('title');
   if (title && title.trim()) {
     return { raw: title.trim(), normalized: normalizeLabel(title) };

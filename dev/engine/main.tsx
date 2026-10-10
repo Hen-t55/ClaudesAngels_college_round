@@ -11,11 +11,13 @@ import type {
   TargetQuery,
   Verb,
   Dir,
+  Rect,
+  Scope,
 } from '../../src/shared/contract';
 
 export function DevHarness() {
   const [activeFixture, setActiveFixture] = useState<
-    'repeated' | 'colors' | 'stacked' | 'form' | 'canvas' | 'iframe' | 'dense'
+    'repeated' | 'colors' | 'stacked' | 'form' | 'canvas' | 'iframe' | 'dense' | 'search'
   >('repeated');
   const [selectedQuadrant, setSelectedQuadrant] = useState<Quadrant | 'ALL'>('ALL');
   const [commandInput, setCommandInput] = useState('click blue button');
@@ -23,6 +25,14 @@ export function DevHarness() {
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [engineStatus, setEngineStatus] = useState<string>('idle');
   const [lastAction, setLastAction] = useState<string>('');
+
+  // Zoom overlay state
+  const [zoomCells, setZoomCells] = useState<{ n: number; rect: Rect }[]>([]);
+  const [zoomRect, setZoomRect] = useState<Rect | null>(null);
+
+  // Type panel state
+  const [typeText, setTypeText] = useState('Hello world');
+  const [typeField, setTypeField] = useState('');
 
   const transportRef = useRef<Transport | null>(null);
 
@@ -138,6 +148,58 @@ export function DevHarness() {
     });
   };
 
+  const sendShowNumbers = () => {
+    if (!transportRef.current) return;
+    const scope: Scope =
+      selectedQuadrant === 'ALL'
+        ? { k: 'page' }
+        : { k: 'quadrant', q: selectedQuadrant };
+    transportRef.current.send('engine.request', {
+      t: 'engine.showNumbers',
+      scope,
+    });
+  };
+
+  const sendZoom = (op: { k: 'start' } | { k: 'pick'; n: number } | { k: 'back' } | { k: 'click' }) => {
+    if (!transportRef.current) return;
+    if (op.k === 'start') {
+      const scope: Scope =
+        selectedQuadrant === 'ALL'
+          ? { k: 'page' }
+          : { k: 'quadrant', q: selectedQuadrant };
+      transportRef.current.send('engine.request', {
+        t: 'engine.zoom',
+        op: { k: 'start', scope },
+      });
+    } else {
+      transportRef.current.send('engine.request', {
+        t: 'engine.zoom',
+        op,
+      });
+    }
+  };
+
+  const sendType = (mode: 'fill' | 'insert') => {
+    if (!transportRef.current) return;
+    transportRef.current.send('engine.request', {
+      t: 'engine.type',
+      text: typeText,
+      field: typeField || undefined,
+      mode,
+    });
+  };
+
+  const sendSearch = () => {
+    if (!transportRef.current) return;
+    transportRef.current.send('engine.request', {
+      t: 'engine.resolve',
+      id: `search_${Date.now()}`,
+      verb: 'search',
+      query: { raw: 'search', role: 'input' },
+      scope: { k: 'page' },
+    });
+  };
+
   useEffect(() => {
     // Set up in-memory transport pairing harness and engine
     const [engineTransport, harnessTransport] = memoryTransport();
@@ -152,8 +214,21 @@ export function DevHarness() {
           setFocusedId(event.matchId);
         } else if (event.t === 'engine.done') {
           setLastAction(`${event.what} [${event.ok ? 'OK' : 'FAIL'}]`);
+          // Clear zoom overlay on done
+          if (event.what === 'zoom_cancelled' || event.ok) {
+            setZoomCells([]);
+            setZoomRect(null);
+          }
         } else if (event.t === 'engine.ready') {
           setEngineStatus('ready');
+        } else if (event.t === 'engine.zoomState') {
+          setZoomRect(event.rect);
+          setZoomCells(event.cells);
+          setEngineStatus(`zoom depth=${event.depth}${event.outcome ? ' [' + event.outcome + ']' : ''}`);
+          if (event.outcome === 'clicked' || event.outcome === 'center') {
+            // Clear after short delay so user can see
+            setTimeout(() => { setZoomCells([]); setZoomRect(null); }, 800);
+          }
         }
       }),
     ];
@@ -176,7 +251,7 @@ export function DevHarness() {
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
           <strong style={{ fontSize: 16 }}>🎯 P2 Engine Harness</strong>
           <span style={{ color: '#94a3b8' }}>Fixture:</span>
-          {(['repeated', 'colors', 'stacked', 'form', 'canvas', 'iframe', 'dense'] as const).map((f) => (
+          {(['repeated', 'colors', 'stacked', 'form', 'canvas', 'iframe', 'dense', 'search'] as const).map((f) => (
             <button
               key={f}
               onClick={() => setActiveFixture(f)}
@@ -259,6 +334,91 @@ export function DevHarness() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* ShowNumbers / Zoom / Type Controls Row */}
+        <div id="advanced-controls" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 8, paddingTop: 8, borderTop: '1px solid #334155' }}>
+          {/* ShowNumbers */}
+          <button
+            id="btn-show-numbers"
+            onClick={sendShowNumbers}
+            style={{ background: '#7c3aed', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+          >
+            ShowNumbers
+          </button>
+
+          {/* Zoom */}
+          <button
+            id="btn-zoom-start"
+            onClick={() => sendZoom({ k: 'start' })}
+            style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+          >
+            Zoom Start
+          </button>
+          {([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) => (
+            <button
+              key={n}
+              id={`btn-zoom-pick-${n}`}
+              onClick={() => sendZoom({ k: 'pick', n })}
+              style={{ background: '#334155', color: '#fff', border: 'none', padding: '4px 7px', borderRadius: 4, cursor: 'pointer', fontSize: 11 }}
+            >
+              {n}
+            </button>
+          ))}
+          <button
+            id="btn-zoom-back"
+            onClick={() => sendZoom({ k: 'back' })}
+            style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+          >
+            ← Back
+          </button>
+          <button
+            id="btn-zoom-click"
+            onClick={() => sendZoom({ k: 'click' })}
+            style={{ background: '#f97316', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+          >
+            Click Here
+          </button>
+
+          {/* Type controls */}
+          <span style={{ color: '#94a3b8', fontSize: 11 }}>│ Type:</span>
+          <input
+            id="type-field-input"
+            type="text"
+            value={typeField}
+            onChange={(e) => setTypeField(e.target.value)}
+            placeholder="field (optional)"
+            style={{ width: 120, padding: '4px 8px', borderRadius: 4, border: '1px solid #475569', background: '#0f172a', color: '#fff', fontSize: 11 }}
+          />
+          <input
+            id="type-text-input"
+            type="text"
+            value={typeText}
+            onChange={(e) => setTypeText(e.target.value)}
+            placeholder="text to type"
+            style={{ width: 140, padding: '4px 8px', borderRadius: 4, border: '1px solid #475569', background: '#0f172a', color: '#fff', fontSize: 11 }}
+          />
+          <button
+            id="btn-type-fill"
+            onClick={() => sendType('fill')}
+            style={{ background: '#10b981', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+          >
+            Fill
+          </button>
+          <button
+            id="btn-type-insert"
+            onClick={() => sendType('insert')}
+            style={{ background: '#6366f1', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+          >
+            Insert
+          </button>
+          <button
+            id="btn-search"
+            onClick={sendSearch}
+            style={{ background: '#f59e0b', color: '#000', border: 'none', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+          >
+            Search verb
+          </button>
         </div>
       </div>
 
@@ -384,6 +544,101 @@ export function DevHarness() {
                 <a key={i} id={`dense-link-${i + 1}`} href={`#link-${i + 1}`} style={{ padding: 4, textDecoration: 'none', color: '#2563eb' }}>
                   Link {i + 1}
                 </a>
+              ))}
+            </div>
+          )}
+
+          {activeFixture === 'search' && (
+            <div id="fixture-search" style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 420 }}>
+              <h3 style={{ margin: 0, color: '#1e293b' }}>Search &amp; Type Fixture</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label htmlFor="search-input" style={{ fontSize: 13, fontWeight: 600 }}>Search box:</label>
+                <input
+                  id="search-input"
+                  type="search"
+                  aria-label="Search"
+                  placeholder="Search…"
+                  style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #94a3b8', fontSize: 14 }}
+                  onChange={(e) => setLastAction(`Search: ${e.target.value}`)}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label htmlFor="react-input" style={{ fontSize: 13, fontWeight: 600 }}>React controlled input:</label>
+                <input
+                  id="react-input"
+                  type="text"
+                  placeholder="React input"
+                  aria-label="React controlled"
+                  style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #94a3b8', fontSize: 14 }}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ fontSize: 13, fontWeight: 600 }}>ContentEditable div:</label>
+                <div
+                  id="ce-div"
+                  contentEditable
+                  aria-label="Content editable"
+                  suppressContentEditableWarning
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #94a3b8',
+                    minHeight: 60,
+                    fontSize: 14,
+                    outline: 'none',
+                    background: '#fff',
+                  }}
+                >
+                  Edit me…
+                </div>
+              </div>
+              <button
+                id="search-submit"
+                type="button"
+                style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', borderRadius: 6, border: 'none', fontSize: 14 }}
+                onClick={() => setLastAction('Search submitted')}
+              >
+                Submit Search
+              </button>
+            </div>
+          )}
+
+          {/* Zoom Grid Overlay */}
+          {zoomCells.length > 0 && zoomRect && (
+            <div
+              id="zoom-overlay"
+              style={{
+                position: 'fixed',
+                left: zoomRect.x,
+                top: zoomRect.y,
+                width: zoomRect.w,
+                height: zoomRect.h,
+                border: '2px solid #0ea5e9',
+                pointerEvents: 'none',
+                zIndex: 10000,
+              }}
+            >
+              {zoomCells.map((cell) => (
+                <div
+                  key={cell.n}
+                  id={`zoom-cell-${cell.n}`}
+                  style={{
+                    position: 'absolute',
+                    left: cell.rect.x - zoomRect.x,
+                    top: cell.rect.y - zoomRect.y,
+                    width: cell.rect.w,
+                    height: cell.rect.h,
+                    border: '1px dashed rgba(14,165,233,0.7)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 16,
+                    fontWeight: 'bold',
+                    color: 'rgba(14,165,233,0.9)',
+                  }}
+                >
+                  {cell.n}
+                </div>
               ))}
             </div>
           )}

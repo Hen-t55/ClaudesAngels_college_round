@@ -130,7 +130,7 @@ export class Engine {
     scope: Scope
   ): void {
     const all = this.indexer.index();
-    const { status, matches, widened } = Resolver.resolve(all, query, scope);
+    const { status, matches, widened } = Resolver.resolve(all, query, scope, verb);
 
     this.currentMatches = matches;
     this.hopNavigator.setMatches(matches);
@@ -229,7 +229,17 @@ export class Engine {
     const all = this.indexer.index();
     const scoped = Resolver.filterByScope(all, scope);
 
-    this.currentMatches = scoped.slice(0, 9);
+    // Sort candidates in reading order: top-to-bottom, then left-to-right
+    const sorted = [...scoped].sort((a, b) => {
+      const dy = Math.abs(a.rect.y - b.rect.y);
+      if (dy < 12) {
+        return a.rect.x - b.rect.x;
+      }
+      return a.rect.y - b.rect.y;
+    });
+
+    // Capped at about 40 matches
+    this.currentMatches = sorted.slice(0, 40);
     this.hopNavigator.setMatches(this.currentMatches);
 
     const matches: MatchMeta[] = this.currentMatches.map((item, index) => ({
@@ -293,21 +303,30 @@ export class Engine {
       this.zoomStack.push(cellRect);
       this.zoomDepth++;
 
-      // After 3 levels of zoom, try to resolve within the cell
+      // Snapping rule: test elements in current cell rect
+      const all = this.indexer.index();
+      const inCell = Resolver.filterByScope(all, { k: 'rect', rect: cellRect });
+
+      if (inCell.length === 1) {
+        Executor.click(inCell[0].element);
+        this.emitZoomState(cellRect, 'clicked');
+        this.zoomStack = [];
+        this.zoomDepth = 0;
+        this.transport?.send('engine.event', {
+          t: 'engine.done',
+          ok: true,
+          what: 'zoom_click_snapped',
+        });
+        return;
+      } else if (inCell.length > 1) {
+        this.currentMatches = inCell;
+        this.hopNavigator.setMatches(inCell);
+        this.emitZoomState(cellRect, 'many');
+        return;
+      }
+
+      // If depth reached >= 3 and no indexed elements found, act on center point
       if (this.zoomDepth >= 3) {
-        const all = this.indexer.index();
-        const inCell = Resolver.filterByScope(all, { k: 'rect', rect: cellRect });
-        if (inCell.length === 1) {
-          Executor.click(inCell[0].element);
-          this.emitZoomState(cellRect, 'clicked');
-          this.zoomStack = [];
-          this.zoomDepth = 0;
-          return;
-        } else if (inCell.length > 1) {
-          this.emitZoomState(cellRect, 'many');
-          return;
-        }
-        // No elements: fall through to center click
         this.handleZoom({ k: 'click' });
         return;
       }
@@ -335,14 +354,48 @@ export class Engine {
       const cx = current.x + current.w / 2;
       const cy = current.y + current.h / 2;
 
+      let el: Element | null = null;
       try {
-        const el = document.elementFromPoint(cx, cy);
-        if (el) {
-          Executor.click(el);
-          this.emitZoomState(current, 'center');
+        el = document.elementFromPoint(cx, cy);
+
+        // If hit is an iframe, resolve element within iframe content document
+        if (el instanceof HTMLIFrameElement) {
+          try {
+            const frameDoc = el.contentDocument || el.contentWindow?.document;
+            if (frameDoc) {
+              const frameRect = el.getBoundingClientRect();
+              const localX = cx - frameRect.left;
+              const localY = cy - frameRect.top;
+              const innerEl = frameDoc.elementFromPoint(localX, localY);
+              if (innerEl) {
+                el = innerEl;
+              }
+            }
+          } catch {
+            // Cross-origin iframe fallback:
+            // When cross-origin, we can't access contentDocument due to CORS restrictions.
+            // Dispatching pointer/mouse events directly on the iframe element is the only local recourse.
+            // This is an architectural limitation of relying on standard DOM manipulation from the parent context.
+          }
         }
       } catch {
         // elementFromPoint not available
+      }
+
+      if (el) {
+        Executor.click(el);
+        this.emitZoomState(current, 'center');
+        this.transport?.send('engine.event', {
+          t: 'engine.done',
+          ok: true,
+          what: 'zoom_click_center',
+        });
+      } else {
+        this.transport?.send('engine.event', {
+          t: 'engine.done',
+          ok: false,
+          what: 'zoom_click_no_element',
+        });
       }
 
       this.zoomStack = [];
@@ -382,24 +435,39 @@ export class Engine {
    * Saves previous value for undo.
    */
   public handleType(text: string, mode: 'fill' | 'insert', field?: string): void {
-    let target: HTMLInputElement | HTMLTextAreaElement | null = null;
+    let target: HTMLElement | null = null;
 
     if (field) {
-      // Try to find input by label text
       const all = this.indexer.index();
-      const match = all.find(
-        (el) =>
-          (el.role === 'input' || el.tagName === 'textarea' || el.tagName === 'select') &&
-          el.label.toLowerCase().includes(field.toLowerCase())
-      );
-      if (match && (match.element instanceof HTMLInputElement || match.element instanceof HTMLTextAreaElement)) {
+      const normField = field.toLowerCase().trim();
+      const match = all.find((el) => {
+        if (el.role !== 'input' && el.tagName !== 'textarea' && el.tagName !== 'select' && el.element.getAttribute('contenteditable') !== 'true') {
+          return false;
+        }
+        const label = el.label.toLowerCase();
+        const placeholder = (el.element.getAttribute('placeholder') || '').toLowerCase();
+        const ariaLabel = (el.element.getAttribute('aria-label') || '').toLowerCase();
+        const name = (el.element.getAttribute('name') || '').toLowerCase();
+        return (
+          label.includes(normField) ||
+          placeholder.includes(normField) ||
+          ariaLabel.includes(normField) ||
+          name.includes(normField)
+        );
+      });
+
+      if (match && match.element instanceof HTMLElement) {
         target = match.element;
       }
     }
 
     if (!target) {
       const active = document.activeElement;
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+      if (
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        (active instanceof HTMLElement && active.isContentEditable)
+      ) {
         target = active;
       }
     }
@@ -413,31 +481,66 @@ export class Engine {
       return;
     }
 
-    // Save undo state
-    this.undoTarget = target;
-    this.undoValue = target.value;
-
-    // Focus the target
     target.focus();
 
-    if (mode === 'fill') {
-      target.value = text;
-    } else {
-      // Insert at cursor position
-      const start = target.selectionStart ?? target.value.length;
-      target.value = target.value.slice(0, start) + text + target.value.slice(start);
-      target.setSelectionRange(start + text.length, start + text.length);
+    // ContentEditable handling
+    if (target.isContentEditable) {
+      this.undoTarget = null;
+      if (mode === 'fill') {
+        target.textContent = text;
+      } else {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          range.deleteContents();
+          const textNode = document.createTextNode(text);
+          range.insertNode(textNode);
+          range.setStartAfter(textNode);
+          range.setEndAfter(textNode);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } else {
+          target.textContent += text;
+        }
+      }
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      this.transport?.send('engine.event', {
+        t: 'engine.done',
+        ok: true,
+        what: `typed "${text}" (${mode})`,
+      });
+      return;
     }
 
-    // Trigger input events for React/Vue/etc.
-    target.dispatchEvent(new Event('input', { bubbles: true }));
-    target.dispatchEvent(new Event('change', { bubbles: true }));
+    // Input / TextArea handling (including React controlled inputs)
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+      this.undoTarget = target;
+      this.undoValue = target.value;
 
-    this.transport?.send('engine.event', {
-      t: 'engine.done',
-      ok: true,
-      what: `typed "${text}" (${mode})`,
-    });
+      let newValue = text;
+      if (mode === 'insert') {
+        const start = target.selectionStart ?? target.value.length;
+        newValue = target.value.slice(0, start) + text + target.value.slice(start);
+      }
+
+      // Native property value setter for React inputs
+      const proto = Object.getPrototypeOf(target);
+      const valueSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (valueSetter) {
+        valueSetter.call(target, newValue);
+      } else {
+        target.value = newValue;
+      }
+
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+
+      this.transport?.send('engine.event', {
+        t: 'engine.done',
+        ok: true,
+        what: `typed "${text}" (${mode})`,
+      });
+    }
   }
 
   /**
