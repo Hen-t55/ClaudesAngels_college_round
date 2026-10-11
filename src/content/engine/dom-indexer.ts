@@ -159,8 +159,7 @@ export class DomIndexer {
           const hit = doc.elementFromPoint(testPoint.x, testPoint.y);
           if (hit) {
             const isSelfOrDescendant = hit === el || el.contains(hit);
-            const isAncestor = hit.contains(el);
-            isHitTestable = isSelfOrDescendant || isAncestor;
+            isHitTestable = isSelfOrDescendant;
           }
         }
       }
@@ -264,6 +263,18 @@ export class DomIndexer {
         h: Math.round(rect.height || (element as HTMLElement).offsetHeight || 20),
       };
 
+      // (3b) Clamp rect to viewport and skip if < 30% visible
+      const clampedX = Math.max(0, adjustedRect.x);
+      const clampedY = Math.max(0, adjustedRect.y);
+      const clampedRight = Math.min(viewportWidth, adjustedRect.x + adjustedRect.w);
+      const clampedBottom = Math.min(viewportHeight, adjustedRect.y + adjustedRect.h);
+      const visibleW = Math.max(0, clampedRight - clampedX);
+      const visibleH = Math.max(0, clampedBottom - clampedY);
+      const elementArea = adjustedRect.w * adjustedRect.h;
+      if (elementArea > 0 && (visibleW * visibleH) / elementArea < 0.3) {
+        continue;
+      }
+
       const domRect = new DOMRect(
         adjustedRect.x,
         adjustedRect.y,
@@ -294,7 +305,8 @@ export class DomIndexer {
         viewportHeight
       );
 
-      const { raw: label } = extractLabel(element);
+      const { raw: rawLabel } = extractLabel(element);
+      const label = rawLabel.length > 80 ? rawLabel.slice(0, 80) : rawLabel; // (3c) truncate to 80 chars
       const role = DomIndexer.extractRole(element);
       const colorName = extractColorName(element);
       const id = this.getOrCreateElementId(element);
@@ -356,20 +368,30 @@ export class DomIndexer {
     if (typeof window === 'undefined') return;
 
     const onThrottledRefresh = () => {
+      // (b) skip refresh while the tab is not visible
+      if (document.hidden) return;
       if (this.isThrottled) return;
       this.isThrottled = true;
       this.throttleTimeout = setTimeout(() => {
         this.isThrottled = false;
         this.index();
-      }, 50); // 50ms throttle budget
+      }, 250); // (a) 250ms throttle budget
     };
 
     window.addEventListener('scroll', onThrottledRefresh, { passive: true });
     window.addEventListener('resize', onThrottledRefresh, { passive: true });
 
     if (typeof MutationObserver !== 'undefined' && document.body) {
-      this.mutationObserver = new MutationObserver(() => {
-        onThrottledRefresh();
+      this.mutationObserver = new MutationObserver((mutations) => {
+        // (c) ignore mutations that only touch overlay / harness elements
+        const meaningful = mutations.some((m) => {
+          const t = m.target as Element;
+          return (
+            !t.closest?.('[data-handsfree-overlay]') &&
+            !t.closest?.('[data-handsfree-harness]')
+          );
+        });
+        if (meaningful) onThrottledRefresh();
       });
       this.mutationObserver.observe(document.body, {
         childList: true,

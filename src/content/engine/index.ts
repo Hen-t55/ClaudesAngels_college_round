@@ -341,16 +341,11 @@ export class Engine {
       const all = this.indexer.index();
       const inCell = Resolver.filterByScope(all, { k: 'rect', rect: cellRect });
 
-      if (inCell.length === 1 && this.zoomDepth >= 2) {
-        Executor.click(inCell[0].element);
-        this.emitZoomState(cellRect, 'clicked');
-        this.zoomStack = [];
-        this.zoomDepth = 0;
-        this.transport?.send('engine.event', {
-          t: 'engine.done',
-          ok: true,
-          what: 'zoom_click_snapped',
-        });
+      // (4b) Pick only narrows — never auto-click; only 'click' op snaps.
+      if (inCell.length === 1) {
+        this.currentMatches = inCell;
+        this.hopNavigator.setMatches(inCell);
+        this.emitZoomState(cellRect, 'one');
         return;
       } else if (inCell.length > 1) {
         this.currentMatches = inCell;
