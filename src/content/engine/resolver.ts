@@ -338,10 +338,10 @@ export class Resolver {
   public static checkImportant(verb: Verb, item: IndexedElement): Important | undefined {
     const norm = normalizeLabel(item.label);
 
-    if (/\b(delete|remove|erase|clear)\b/.test(norm)) {
+    if (/\b(delete|remove)\b/.test(norm)) {
       return { reason: 'delete', description: `Delete "${item.label}"` };
     }
-    if (/\b(purchase|buy|pay|place order|checkout)\b/.test(norm)) {
+    if (/\b(purchase|buy|pay|place order|submit order|complete order|confirm order|order now|checkout)\b/.test(norm)) {
       return { reason: 'purchase', description: `Purchase/Pay: "${item.label}"` };
     }
     if (/\b(sign out|log out|disconnect)\b/.test(norm)) {
