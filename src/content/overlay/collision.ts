@@ -53,18 +53,31 @@ export function computeBadgePlacements(
     const maxX = Math.max(BADGE_MARGIN, viewport.width - badgeSize - BADGE_MARGIN);
     const maxY = Math.max(BADGE_MARGIN, viewport.height - badgeSize - BADGE_MARGIN);
 
+    const isNearTop = r.y < 35;
+    const isNearRight = r.x + r.w > viewport.width - 35;
+    const isNearBottom = r.y + r.h > viewport.height - 35;
+
     // Candidate positions relative to target element rect
+    // Intelligently adapt when target is near sticky top header or viewport borders
     const candidates = [
-      // 1. Top-Left offset
-      { x: r.x - 8, y: r.y - 8 },
-      // 2. Top-Right offset
-      { x: r.x + r.w - badgeSize + 8, y: r.y - 8 },
-      // 3. Bottom-Left offset
-      { x: r.x - 8, y: r.y + r.h - badgeSize + 8 },
-      // 4. Bottom-Right offset
+      // 1. Top offset (or inside top if touching top margin / sticky header)
+      isNearTop
+        ? { x: r.x + 4, y: Math.max(BADGE_MARGIN, r.y + 4) }
+        : { x: r.x - 8, y: r.y - 8 },
+      // 2. Centered above (or centered inside if near top)
+      isNearTop
+        ? { x: r.x + r.w / 2 - badgeSize / 2, y: Math.max(BADGE_MARGIN, r.y + 4) }
+        : { x: r.x + r.w / 2 - badgeSize / 2, y: r.y - badgeSize - 4 },
+      // 3. Top-Right offset (or inside right if near edge)
+      isNearRight
+        ? { x: r.x + r.w - badgeSize - 4, y: isNearTop ? r.y + 4 : r.y - 8 }
+        : { x: r.x + r.w - badgeSize + 8, y: r.y - 8 },
+      // 4. Bottom-Left offset (or inside bottom if near bottom edge)
+      isNearBottom
+        ? { x: r.x + 4, y: r.y + r.h - badgeSize - 4 }
+        : { x: r.x - 8, y: r.y + r.h - badgeSize + 8 },
+      // 5. Bottom-Right offset
       { x: r.x + r.w - badgeSize + 8, y: r.y + r.h - badgeSize + 8 },
-      // 5. Centered above
-      { x: r.x + r.w / 2 - badgeSize / 2, y: r.y - badgeSize - 4 },
       // 6. Centered inside
       { x: r.x + r.w / 2 - badgeSize / 2, y: r.y + r.h / 2 - badgeSize / 2 },
     ];
@@ -95,17 +108,44 @@ export function computeBadgePlacements(
       }
     }
 
-    // If still colliding, shift vertically below the colliding badge
+    // If still colliding, shift in multiple directions (downwards, rightwards, upwards)
     if (!resolved) {
-      for (let offset = 1; offset <= 4; offset++) {
-        const shifted = {
+      for (let offset = 1; offset <= 6; offset++) {
+        // 1. Try shifting downwards
+        const shiftedDown = {
           x: clamp(chosenPos.x, BADGE_MARGIN, maxX),
           y: clamp(chosenPos.y + offset * (badgeSize + 4), BADGE_MARGIN, maxY),
           w: badgeSize,
           h: badgeSize,
         };
-        if (!placed.some((other) => doesOverlap(shifted, other))) {
-          chosenPos = shifted;
+        if (!placed.some((other) => doesOverlap(shiftedDown, other))) {
+          chosenPos = shiftedDown;
+          resolved = true;
+          break;
+        }
+
+        // 2. Try shifting rightwards
+        const shiftedRight = {
+          x: clamp(chosenPos.x + offset * (badgeSize + 4), BADGE_MARGIN, maxX),
+          y: clamp(chosenPos.y, BADGE_MARGIN, maxY),
+          w: badgeSize,
+          h: badgeSize,
+        };
+        if (!placed.some((other) => doesOverlap(shiftedRight, other))) {
+          chosenPos = shiftedRight;
+          resolved = true;
+          break;
+        }
+
+        // 3. Try shifting upwards (if not at top edge)
+        const shiftedUp = {
+          x: clamp(chosenPos.x, BADGE_MARGIN, maxX),
+          y: clamp(chosenPos.y - offset * (badgeSize + 4), BADGE_MARGIN, maxY),
+          w: badgeSize,
+          h: badgeSize,
+        };
+        if (!placed.some((other) => doesOverlap(shiftedUp, other))) {
+          chosenPos = shiftedUp;
           resolved = true;
           break;
         }

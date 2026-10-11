@@ -66,4 +66,40 @@ describe('Collision & Badge Placement Helpers', () => {
       }
     }
   });
+
+  it('keeps badges in view when target is inside a sticky top header or at y=0', () => {
+    const stickyHeaderMatches = [
+      { id: 'logo', rect: { x: 16, y: 0, w: 120, h: 32 } },
+      { id: 'search', rect: { x: 200, y: 4, w: 240, h: 28 } },
+      { id: 'cart', rect: { x: 920, y: 2, w: 60, h: 30 } },
+    ];
+    const viewport = { width: 1000, height: 700 };
+    const placed = computeBadgePlacements(stickyHeaderMatches, viewport);
+
+    expect(placed).toHaveLength(3);
+    for (const b of placed) {
+      expect(b.y).toBeGreaterThanOrEqual(4);
+      expect(b.y + BADGE_SIZE).toBeLessThanOrEqual(viewport.height - 4);
+      expect(b.x).toBeGreaterThanOrEqual(4);
+      expect(b.x + BADGE_SIZE).toBeLessThanOrEqual(viewport.width - 4);
+    }
+  });
+
+  it('handles zoom levels and edge boundaries without clipping', () => {
+    // 150% zoomed smaller viewport simulation
+    const zoomedViewport = { width: 640, height: 480 };
+    const edgeMatches = [
+      { id: 'sticky-footer', rect: { x: 20, y: 460, w: 200, h: 20 } },
+      { id: 'right-drawer', rect: { x: 610, y: 150, w: 30, h: 80 } },
+    ];
+    const placed = computeBadgePlacements(edgeMatches, zoomedViewport);
+
+    expect(placed).toHaveLength(2);
+    for (const b of placed) {
+      expect(b.x).toBeGreaterThanOrEqual(4);
+      expect(b.y).toBeGreaterThanOrEqual(4);
+      expect(b.x + BADGE_SIZE).toBeLessThanOrEqual(zoomedViewport.width - 4);
+      expect(b.y + BADGE_SIZE).toBeLessThanOrEqual(zoomedViewport.height - 4);
+    }
+  });
 });

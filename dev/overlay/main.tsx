@@ -284,15 +284,16 @@ export function OverlayDevApp() {
 
       {bgType === 'dense-page' && (
         <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a', padding: '20px 40px' }}>
-          {/* Header */}
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: 16 }}>
+          {/* Sticky Top Header */}
+          <header style={{ position: 'sticky', top: 0, zIndex: 100, background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', padding: '12px 0', backdropFilter: 'blur(8px)' }}>
             <div style={{ fontWeight: 800, fontSize: 22, color: '#2563eb' }}>StoreDirect</div>
-            <div style={{ display: 'flex', gap: 20, fontSize: 14, fontWeight: 600 }}>
+            <div style={{ display: 'flex', gap: 14, fontSize: 14, fontWeight: 600, alignItems: 'center' }}>
               <span>Home</span>
               <span>Catalog</span>
               <span>Deals</span>
-              <span>Support</span>
-              <span>Cart (3)</span>
+              <button id="sticky-header-btn" style={{ padding: '6px 12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, cursor: 'pointer' }}>
+                Cart (3)
+              </button>
             </div>
           </header>
 

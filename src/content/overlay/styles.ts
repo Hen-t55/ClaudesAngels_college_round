@@ -3,8 +3,8 @@ export const OVERLAY_CSS = `
   all: initial !important;
   position: fixed !important;
   inset: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
+  width: 100% !important;
+  height: 100% !important;
   z-index: 2147483647 !important;
   pointer-events: none !important;
   margin: 0 !important;
@@ -12,6 +12,7 @@ export const OVERLAY_CSS = `
   border: 0 !important;
   overflow: hidden !important;
   box-sizing: border-box !important;
+  isolation: isolate !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
   color: #f8fafc !important;
   line-height: 1.4 !important;
@@ -39,8 +40,8 @@ export const OVERLAY_CSS = `
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-columns: 50vw 50vw;
-  grid-template-rows: 50vh 50vh;
+  grid-template-columns: 50% 50%;
+  grid-template-rows: 50% 50%;
   pointer-events: none;
 }
 
@@ -52,13 +53,19 @@ export const OVERLAY_CSS = `
 
 .hf-quadrant-label {
   position: absolute;
-  padding: 4px 8px;
+  padding: 4px 10px;
   font-size: 11px;
   font-weight: 800;
-  letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.08em;
+  background: rgba(15, 23, 42, 0.78);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.4);
   user-select: none;
   pointer-events: none;
+  z-index: 20;
 }
 
 .hf-q-tl .hf-quadrant-label { top: 12px; left: 12px; }
@@ -68,31 +75,35 @@ export const OVERLAY_CSS = `
 
 /* Dimmed other quadrants when one is active */
 .hf-quadrant.hf-dimmed {
-  background-color: rgba(10, 15, 30, 0.52);
-  backdrop-filter: blur(1.5px);
+  background-color: rgba(10, 15, 30, 0.54);
+  backdrop-filter: blur(2px);
 }
 
 /* Active aiming quadrant */
 .hf-quadrant.hf-active {
-  box-shadow: inset 0 0 0 3px #38bdf8, inset 0 0 25px rgba(56, 189, 248, 0.25);
-  background-color: transparent;
+  box-shadow: inset 0 0 0 1.5px rgba(15, 23, 42, 0.9), inset 0 0 0 4px #0284c7, inset 0 0 30px rgba(56, 189, 248, 0.32);
+  background-color: rgba(56, 189, 248, 0.02);
 }
 
 .hf-quadrant.hf-active .hf-quadrant-label {
-  color: #38bdf8;
-  text-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #38bdf8;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.85), 0 2px 6px rgba(0, 0, 0, 0.6);
 }
 
 /* Locked quadrant style */
 .hf-quadrant.hf-locked {
-  box-shadow: inset 0 0 0 4px #f59e0b, inset 0 0 35px rgba(245, 158, 11, 0.35);
-  background-color: rgba(245, 158, 11, 0.04);
+  box-shadow: inset 0 0 0 1.5px rgba(15, 23, 42, 0.9), inset 0 0 0 4px #f59e0b, inset 0 0 35px rgba(245, 158, 11, 0.38);
+  background-color: rgba(245, 158, 11, 0.05);
 }
 
 .hf-quadrant.hf-locked .hf-quadrant-label {
-  color: #f59e0b;
+  background: #f59e0b;
+  color: #0f172a;
+  border-color: #fde68a;
   font-weight: 900;
-  text-shadow: 0 0 10px rgba(245, 158, 11, 0.9);
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.9), 0 2px 6px rgba(0, 0, 0, 0.6);
 }
 
 .hf-locked-badge {
@@ -103,23 +114,25 @@ export const OVERLAY_CSS = `
   color: #0f172a;
   font-size: 11px;
   font-weight: 900;
-  padding: 3px 8px;
+  padding: 4px 10px;
   border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.3);
   letter-spacing: 0.05em;
   display: flex;
   align-items: center;
   gap: 4px;
+  z-index: 25;
 }
 
-/* Subtle quadrant dividing crosshairs */
+/* High contrast quadrant dividing crosshairs */
 .hf-crosshair-v {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 50vw;
+  left: 50%;
   width: 1px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.9), 0 0 6px rgba(56, 189, 248, 0.35);
   pointer-events: none;
 }
 
@@ -127,13 +140,14 @@ export const OVERLAY_CSS = `
   position: absolute;
   left: 0;
   right: 0;
-  top: 50vh;
+  top: 50%;
   height: 1px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.9), 0 0 6px rgba(56, 189, 248, 0.35);
   pointer-events: none;
 }
 
-/* Head Dot pointer */
+/* Head Dot pointer with high contrast outline */
 .hf-head-dot {
   position: absolute;
   width: 14px;
@@ -141,18 +155,19 @@ export const OVERLAY_CSS = `
   border-radius: 50%;
   background: #38bdf8;
   border: 2px solid #ffffff;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.9), 0 2px 6px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 0 1.5px #0f172a, 0 0 14px rgba(56, 189, 248, 0.95), 0 3px 8px rgba(0, 0, 0, 0.7);
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 100;
 }
 
-/* Matches highlighting */
+/* Matches highlighting with double-ring high contrast */
 .hf-match-highlight {
   position: absolute;
-  border: 2px solid #38bdf8;
-  background: rgba(56, 189, 248, 0.14);
-  border-radius: 4px;
+  border: 2px solid #0284c7;
+  background: rgba(56, 189, 248, 0.18);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.8), inset 0 0 0 1px rgba(15, 23, 42, 0.5);
+  border-radius: 6px;
   pointer-events: none;
   transition: all 0.15s ease;
   z-index: 40;
@@ -161,12 +176,12 @@ export const OVERLAY_CSS = `
 /* Focused match (HOP mode) */
 .hf-match-highlight.hf-focused {
   border: 3px solid #2563eb !important;
-  background: rgba(37, 99, 235, 0.28) !important;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.5), 0 0 22px rgba(37, 99, 235, 0.8) !important;
+  background: rgba(37, 99, 235, 0.32) !important;
+  box-shadow: 0 0 0 1.5px #ffffff, 0 0 0 4px #2563eb, 0 0 24px rgba(37, 99, 235, 0.9) !important;
   z-index: 50 !important;
 }
 
-/* Badges */
+/* Number Badges with solid dark rim and crisp typography */
 .hf-badge {
   position: absolute;
   width: 26px;
@@ -175,9 +190,10 @@ export const OVERLAY_CSS = `
   background: #0f172a;
   color: #ffffff;
   border: 2px solid #38bdf8;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.8), 0 0 8px rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 0 1.5px #020617, 0 3px 10px rgba(0, 0, 0, 0.8), 0 0 10px rgba(56, 189, 248, 0.5);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 900;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -188,24 +204,25 @@ export const OVERLAY_CSS = `
 
 .hf-badge.hf-badge-focused {
   background: #2563eb;
+  color: #ffffff;
   border-color: #93c5fd;
   transform: scale(1.22);
-  box-shadow: 0 0 14px rgba(37, 99, 235, 0.9), 0 2px 8px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 0 0 2px #ffffff, 0 0 18px rgba(37, 99, 235, 0.95), 0 4px 12px rgba(0, 0, 0, 0.9);
 }
 
 /* Zoom Grid */
 .hf-zoom-container {
   position: absolute;
-  border: 2px solid #38bdf8;
-  background: rgba(15, 23, 42, 0.2);
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.7);
+  border: 2.5px solid #0284c7;
+  background: rgba(15, 23, 42, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2), 0 0 40px rgba(0, 0, 0, 0.85);
   pointer-events: none;
   z-index: 70;
 }
 
 .hf-zoom-breadcrumb {
   position: absolute;
-  top: -34px;
+  top: -36px;
   left: 0;
   background: #0f172a;
   color: #38bdf8;
@@ -214,17 +231,24 @@ export const OVERLAY_CSS = `
   font-size: 12px;
   font-weight: 800;
   border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.1);
   white-space: nowrap;
+  z-index: 75;
+}
+
+.hf-zoom-breadcrumb.hf-zoom-breadcrumb-bottom {
+  top: auto;
+  bottom: -36px;
 }
 
 .hf-zoom-cell {
   position: absolute;
-  border: 1px dashed rgba(56, 189, 248, 0.45);
+  border: 1px dashed rgba(56, 189, 248, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
+  box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.3);
 }
 
 .hf-zoom-cell-badge {
@@ -236,10 +260,11 @@ export const OVERLAY_CSS = `
   border: 2px solid #38bdf8;
   font-size: 16px;
   font-weight: 900;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 0 0 1.5px #000, 0 4px 12px rgba(0, 0, 0, 0.85);
 }
 
 /* Confirm / Notification Banner */
@@ -249,11 +274,12 @@ export const OVERLAY_CSS = `
   left: 50%;
   transform: translateX(-50%);
   width: min(90vw, 540px);
-  background: #0f172a;
+  background: rgba(15, 23, 42, 0.96);
   color: #f8fafc;
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 16px 22px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(12px);
   display: flex;
   flex-direction: column;
   gap: 10px;

@@ -1,0 +1,71 @@
+flowchart TB
+    subgraph BrowserEnvironment ["Chrome MV3 Host Environment"]
+        subgraph SidePanel ["Side Panel Window (Isolated Process)"]
+            direction TB
+            subgraph P1_Vision ["P1: Vision & Head Tracking"]
+                Webcam["User Webcam Feed (getUserMedia)"] --> MediaPipe["MediaPipe Tasks Vision (FaceLandmarker)"]
+                MediaPipe --> OneEuro["One Euro Filter (Jitter Suppression)"]
+                OneEuro --> PoseEst["Pose & Facing Detector"]
+                PoseEst --> Gestures["Gesture Analyzer (Nods, Shakes, Flicks)"]
+                PoseEst --> Quality["Quality Monitor (FPS, Jitter, SNR)"]
+            end
+
+            subgraph P3_VoiceOrch ["P3: Voice & Orchestrator State Machine"]
+                Mic["Web Audio / WebSpeech STT"] --> SpeechOnset["Speech Onset & Audio Level Monitor"]
+                SpeechOnset --> Parser["Grammar Parser & Intent Classifier"]
+                Orchestrator["Orchestrator Core (Finite State Machine)"]
+                Shifter["2-Gear Shifter (Auto-Shift: Hop vs. Voice)"]
+                SettingsManager["Settings & Custom Keyword Manager"]
+            end
+
+            subgraph P4_SidePanelUI ["P4: Side Panel UI (React)"]
+                Monitor["Real-time Head & Speech Monitor"]
+                Wizard["20s Setup Calibration Wizard"]
+                CheatSheet["Voice Command Cheat Sheet"]
+                SettingsUI["Tuning & Safety Config UI"]
+            end
+        end
+
+        subgraph BackgroundSW ["Background Service Worker (P3 Relay)"]
+            MessageRelay["chrome.runtime Message Relay"]
+            TabController["Tab & Window Manager (MV3 chrome.tabs)"]
+        end
+
+        subgraph ContentScript ["Content Script (Web Page DOM)"]
+            direction TB
+            subgraph P2_Engine ["P2: Resolver & Action Engine"]
+                DOMIndexer["DOM Indexer & Shadow DOM Traverser"]
+                FuzzyMatcher["Fuzzy Query & Color/Role Resolver"]
+                ActionExecutor["Action Dispatcher (Trusted Click, Focus, Type)"]
+                HistoryLog["Undo & Action History Log"]
+            end
+
+            subgraph P4_Overlay ["P4: Visual Overlay System"]
+                ShadowHost["#handsfree-overlay-host (Shadow DOM Root)"]
+                QuadrantGrid["2x2 Quadrant Mask (TL, TR, BL, BR)"]
+                BadgePlacer["Collision-Aware Badge Placement Engine"]
+                ZoomGrid["Recursive 3x3 Zoom Matrix"]
+                BannerEngine["Confirm / Error / Info Banners"]
+                HUDDock["Status Pill & Gear Mode Dock"]
+            end
+        end
+    end
+
+    %% Inter-module communication
+    P1_Vision -->|HeadEvent: pointer, quadrant, flick, nod, facing| Orchestrator
+    P3_VoiceOrch -->|SpeechEvent: onset, result, level| Orchestrator
+    Orchestrator <-->|EngineRequest / EngineEvent| P2_Engine
+    Orchestrator -->|OverlayState broadcast| P4_Overlay
+    Orchestrator -->|TabCommand: tab_n, close_tab, back| TabController
+    P4_SidePanelUI <-->|SettingsMessage| SettingsManager
+    ActionExecutor -.->|Dispatched Input| WebPageDOM["Target Webpage Elements"]
+
+    classDef vision fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef engine fill:#1e293b,stroke:#34d399,stroke-width:2px,color:#f8fafc;
+    classDef orch fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+    classDef ui fill:#1e293b,stroke:#a855f7,stroke-width:2px,color:#f8fafc;
+
+    class P1_Vision vision;
+    class P2_Engine engine;
+    class P3_VoiceOrch orch;
+    class P4_SidePanelUI,P4_Overlay ui;

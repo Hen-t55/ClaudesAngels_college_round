@@ -19,7 +19,7 @@ export function createOverlayRenderer(targetDoc: Document = document): OverlayHa
   host = targetDoc.createElement('div');
   host.id = HOST_ID;
   host.style.cssText =
-    'position:fixed;inset:0;width:100vw;height:100vh;z-index:2147483647;pointer-events:none;margin:0;padding:0;border:0;overflow:hidden;';
+    'position:fixed;inset:0;width:100%;height:100%;z-index:2147483647;pointer-events:none;margin:0;padding:0;border:0;overflow:hidden;isolation:isolate;';
 
   // Attach Shadow DOM for encapsulation
   const shadow = host.attachShadow({ mode: 'open' });
@@ -37,8 +37,9 @@ export function createOverlayRenderer(targetDoc: Document = document): OverlayHa
   function render(state: OverlayState) {
     container.innerHTML = '';
 
-    const viewportW = targetDoc.defaultView?.innerWidth ?? 1280;
-    const viewportH = targetDoc.defaultView?.innerHeight ?? 800;
+    const win = targetDoc.defaultView;
+    const viewportW = win?.visualViewport?.width ?? win?.innerWidth ?? targetDoc.documentElement.clientWidth ?? 1280;
+    const viewportH = win?.visualViewport?.height ?? win?.innerHeight ?? targetDoc.documentElement.clientHeight ?? 800;
 
     // 1. Quadrants Layer
     const quadrantsGrid = targetDoc.createElement('div');
@@ -158,6 +159,9 @@ export function createOverlayRenderer(targetDoc: Document = document): OverlayHa
 
       const breadcrumb = targetDoc.createElement('div');
       breadcrumb.className = 'hf-zoom-breadcrumb';
+      if (z.rect.y < 38) {
+        breadcrumb.classList.add('hf-zoom-breadcrumb-bottom');
+      }
       breadcrumb.textContent = `Zoom: Level ${z.depth} (Say '1'–'9' to zoom, 'Back' to return, 'Click' to select)`;
       zoomContainer.appendChild(breadcrumb);
 
