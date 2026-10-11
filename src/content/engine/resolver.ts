@@ -132,8 +132,17 @@ export class Resolver {
     return candidates;
   }
 
+  // Role and color words that must not be matched against element labels
+  private static readonly ROLE_STRIP =
+    /\b(button|link|field|input|checkbox|tab)\b/gi;
+
+  private static readonly COLOR_STRIP =
+    /\b(red|orange|yellow|green|cyan|blue|purple|magenta|pink|black|white|gray|grey)\b/gi;
+
   /**
-   * Score candidates using Fuse.js fuzzy matching on normalized labels
+   * Score candidates using Fuse.js fuzzy matching on normalized labels.
+   * Role and color words are stripped from queryText before matching so that
+   * a command like "click blue button" does not try to find a label "blue button".
    */
   public static scoreCandidates(
     candidates: IndexedElement[],
@@ -148,7 +157,14 @@ export class Resolver {
       }));
     }
 
-    const normalizedQuery = normalizeLabel(queryText);
+    // Strip role and color words before label matching
+    const cleanedText = queryText
+      .replace(Resolver.ROLE_STRIP, '')
+      .replace(Resolver.COLOR_STRIP, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    const normalizedQuery = normalizeLabel(cleanedText || queryText);
 
     // Check for exact substring match first
     const exactMatches = candidates.filter((c) =>
