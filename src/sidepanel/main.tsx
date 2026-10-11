@@ -50,11 +50,7 @@ loadSettings().then((settings) => {
   // Handle tab changed mid-action: re-arm and clear state when active tab switches
   if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.onActivated) {
     chrome.tabs.onActivated.addListener(() => {
-      transport.send('engine.request', { t: 'engine.clear' });
-      transport.send('overlay', {
-        ...orchestrator.getOverlayState(),
-        banner: { kind: 'info', text: 'Tab changed — re-armed to new page', timeoutMs: 2000 },
-      });
+      orchestrator.handleTabChanged();
     });
   }
 

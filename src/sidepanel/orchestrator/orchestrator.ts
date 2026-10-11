@@ -15,6 +15,7 @@ export interface OrchestratorDeps {
   transport: Transport;
   initialGear?: Gear;
   confirmTimeoutMs?: number;
+  engineTimeoutMs?: number;
   /** Supply loaded settings; orchestrator listens for live patches on the settings channel. */
   settings?: Partial<HandsfreeSettings>;
 }
@@ -49,7 +50,7 @@ export class Orchestrator {
   private confirmTimeoutMs: number;
   private isWidenedScope = false;
   private engineTimer: ReturnType<typeof setTimeout> | null = null;
-  private engineTimeoutMs = 1500; // 1.5s recovery timeout if engine is silent
+  private engineTimeoutMs = 3000; // 3s recovery timeout if engine is silent
 
   // Latency benchmark metrics
   private speechFinalTs = 0;
@@ -84,6 +85,7 @@ export class Orchestrator {
   constructor(deps: OrchestratorDeps) {
     this.transport = deps.transport;
     this.confirmTimeoutMs = deps.confirmTimeoutMs ?? 5000;
+    this.engineTimeoutMs = deps.engineTimeoutMs ?? 3000;
     this.telemetry = new TelemetryEmitter(deps.transport);
 
     if (deps.initialGear) {
@@ -108,6 +110,24 @@ export class Orchestrator {
       speechToActionMs: this.lastSpeechToActionLatency,
       quadrantHighlightMs: this.lastQuadrantLatency,
     };
+  }
+
+  public handleTabChanged(): void {
+    if (this.engineTimer) {
+      clearTimeout(this.engineTimer);
+      this.engineTimer = null;
+    }
+    if (this.confirmTimer) {
+      clearTimeout(this.confirmTimer);
+      this.confirmTimer = null;
+    }
+    this.pendingTargetAction = undefined;
+    this.pendingConfirm = undefined;
+    this.matches = [];
+    this.transport.send('engine.request', { t: 'engine.clear' });
+    this.rearmToAiming();
+    this.banner = { kind: 'info', text: 'Tab changed — re-armed to new page', timeoutMs: 2000 };
+    this.broadcast();
   }
 
   public getOverlayState(): OverlayState {
@@ -326,7 +346,7 @@ export class Orchestrator {
       case 'speech.result':
         this.transcript = ev.text;
         if (ev.final) {
-          this.speechFinalTs = Date.now();
+          this.speechFinalTs = performance.now();
           this.updateSpeechQuality(ev.confidence);
           const intent = parseIntent(ev.text, { mode: this.phase === 'DICTATION' ? 'dictation' : 'command' });
           if (intent) this.handleIntent(intent);
@@ -344,13 +364,14 @@ export class Orchestrator {
       case 'speech.error':
         if (ev.error === 'not-allowed' || ev.error === 'audio-capture' || ev.error === 'service-not-allowed' || ev.error === 'network') {
           const reason = ev.error === 'not-allowed'
-            ? 'Microphone permission denied. Switched to Hop gear + Simulator/Type fallback.'
+            ? 'Microphone permission denied. Switched to typed simulation input and Hop gear.'
             : ev.error === 'audio-capture'
-            ? 'Microphone busy or unavailable. Switched to Hop gear.'
-            : 'Speech service offline/unavailable. Switched to Hop gear.';
+            ? 'Microphone busy or unavailable. Switched to typed simulation input and Hop gear.'
+            : 'Speech service offline or unavailable. Switched to typed simulation input and Hop gear.';
 
           this.manualGearPinned = false; // allow gear fallback
           this.setGear('hop', reason);
+          this.transport.send('settings', { t: 'settings.set', patch: { simulatorEnabled: true } });
           this.banner = {
             kind: 'error',
             text: `⚠️ Voice unavailable (${ev.error}): ${reason}`,
@@ -531,6 +552,7 @@ export class Orchestrator {
 
   private handleEngineTimeout(reason: string): void {
     if (this.phase === 'RESOLVING') {
+      this.transport.send('engine.request', { t: 'engine.clear' });
       this.rearmToAiming();
       this.banner = {
         kind: 'error',
@@ -629,7 +651,7 @@ export class Orchestrator {
   private activateMatch(match: MatchMeta): void {
     const verb = this.pendingTargetAction?.verb || 'click';
     if (this.speechFinalTs > 0) {
-      this.lastSpeechToActionLatency = Date.now() - this.speechFinalTs;
+      this.lastSpeechToActionLatency = performance.now() - this.speechFinalTs;
     }
     if (match.important) {
       this.askConfirmation(match.id, match.important);
