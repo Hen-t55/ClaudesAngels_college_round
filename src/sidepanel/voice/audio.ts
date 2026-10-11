@@ -27,6 +27,10 @@ export class AudioLevelMonitor {
       this.analyser.fftSize = 256;
       source.connect(this.analyser);
 
+      if (this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+
       const bufferLength = this.analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
 

@@ -15,13 +15,13 @@ loadSettings().then((settings) => {
   // Start vision module (tracker + keyboard simulator fallback)
   const visionHandle = createHeadModule(transport);
 
-  visionHandle.tracker.start().catch((err) => {
+  visionHandle.tracker.start().then(() => {
+    console.log('[Handsfree Sidepanel] Webcam tracker active!');
+    visionHandle.setSimulatorActive(false);
+  }).catch((err) => {
     console.warn('[Handsfree Sidepanel] Webcam unavailable, enabling keyboard simulator:', err);
     visionHandle.setSimulatorActive(true);
   });
-
-  // Apply simulator setting
-  if (settings.simulatorEnabled) visionHandle.setSimulatorActive(true);
 
   // Start speech module with persisted language
   const speechModule = new SpeechModule(transport, {
