@@ -17,9 +17,20 @@
 <body>
   <div class="card">
     <h1>Handsfree Setup</h1>
-    <p>We need camera access for head tracking and microphone access for voice commands. All processing stays on your device.</p>
+    <p>Handsfree runs 100% on-device. Camera access is needed for head tracking, and microphone access is needed for voice recognition.</p>
+    
     <button id="grant">Grant Camera &amp; Microphone</button>
-    <p id="status"></p>
+    <p id="status" style="margin-top: 14px; font-weight: 500;"></p>
+
+    <div style="margin-top: 24px; padding: 14px; background: #1a1a1a; border-radius: 8px; text-align: left; font-size: 13px; color: #888; border: 1px solid #333;">
+      <strong style="color: #bbb; display: block; margin-bottom: 6px;">💡 If Chrome does not show a prompt:</strong>
+      <ol style="padding-left: 18px; margin: 0; line-height: 1.6;">
+        <li>Look at the address bar above: click the <strong>Site Settings icon (left of URL)</strong>.</li>
+        <li>Set both <strong>Camera</strong> and <strong>Microphone</strong> to <strong>Allow</strong>.</li>
+        <li>Or visit: <code style="color: #38bdf8;">chrome://settings/content/all</code>, search for "Handsfree", and allow Camera &amp; Mic.</li>
+        <li>Reload this page and the side panel.</li>
+      </ol>
+    </div>
   </div>
   <script type="module" src="/src/permissions.ts"></script>
 </body>
