@@ -21,20 +21,6 @@
     <button id="grant">Grant Camera &amp; Microphone</button>
     <p id="status"></p>
   </div>
-  <script>
-    document.getElementById('grant').addEventListener('click', async () => {
-      const status = document.getElementById('status');
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        stream.getTracks().forEach(t => t.stop());
-        status.textContent = '✓ Permissions granted! You can close this tab and open the side panel from the toolbar.';
-        status.className = 'ok';
-        document.getElementById('grant').disabled = true;
-      } catch (e) {
-        status.textContent = '✗ Permission denied. Please allow camera and microphone and try again.';
-        status.style.color = '#ef4444';
-      }
-    });
-  </script>
+  <script type="module" src="/src/permissions.ts"></script>
 </body>
 </html>
