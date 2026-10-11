@@ -18,10 +18,35 @@ export class SeededPRNG {
   }
 }
 
+export const RECOMMENDED_IMPAIRMENT_PRESETS: Record<1 | 2, Omit<ImpairmentConfig, 'seed'>> = {
+  1: {
+    // Level 1: Mild physiological tremor, slight underexposure, occasional frame drop
+    tremorAmp: 0.035,
+    tremorHz: [4, 7],
+    brightness: 0.50,
+    dropFramePct: 15,
+  },
+  2: {
+    // Level 2: Severe tremor, dark room, heavy CPU frame throttling
+    tremorAmp: 0.090,
+    tremorHz: [5, 11],
+    brightness: 0.25,
+    dropFramePct: 40,
+  },
+};
+
 export class ImpairmentInjector {
   private config: ImpairmentConfig | null = null;
   private prng: SeededPRNG | null = null;
   private startTimeMs = 0;
+
+  public applyPreset(level: 1 | 2, seed = 42): void {
+    const preset = RECOMMENDED_IMPAIRMENT_PRESETS[level];
+    this.setConfig({
+      seed,
+      ...preset,
+    });
+  }
 
   public setConfig(cfg: ImpairmentConfig | null): void {
     this.config = cfg;
