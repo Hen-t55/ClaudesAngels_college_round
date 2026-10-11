@@ -4,6 +4,7 @@ import { memoryTransport } from '../../src/shared/bus';
 import type { HeadEvent, Quadrant, HeadMode, ImpairmentConfig } from '../../src/shared/contract';
 import { createHeadModule, VisionModuleHandle } from '../../src/sidepanel/vision';
 import { RECOMMENDED_IMPAIRMENT_PRESETS } from '../../src/sidepanel/vision/ImpairmentInjector';
+import { VisionErrorState } from '../../src/sidepanel/vision/HeadTracker';
 import { TrialManager, TrialRecord } from './TrialManager';
 
 export function VisionDevHarness() {
@@ -20,9 +21,6 @@ export function VisionDevHarness() {
   const [beta, setBeta] = useState(0.007);
   const [gain, setGain] = useState(2.2);
   const [deadzone, setDeadzone] = useState(0.02);
-  const [flickVel, setFlickVel] = useState(2.2);
-  const [nodDelta, setNodDelta] = useState(0.08);
-  const [shakeDelta, setShakeDelta] = useState(0.10);
 
   // Setup Wizard state
   const [setupState, setSetupState] = useState<{ step: string; progress: number; prompt: string; ok?: boolean } | null>(null);
@@ -34,6 +32,15 @@ export function VisionDevHarness() {
     faceConf: 0.95,
     fps: 0,
   });
+
+  // Error State Demonstration
+  const [activeErrorState, setActiveErrorState] = useState<VisionErrorState>('none');
+
+  // Soak Test Monitor State
+  const [soakRunning, setSoakRunning] = useState(false);
+  const [soakElapsedSec, setSoakElapsedSec] = useState(0);
+  const [soakFrameCount, setSoakFrameCount] = useState(0);
+  const [soakMaxDrift, setSoakMaxDrift] = useState(0);
 
   // Impairment controls state
   const [impairmentLevel, setImpairmentLevel] = useState<0 | 1 | 2>(0);
@@ -57,7 +64,6 @@ export function VisionDevHarness() {
   const [trialHits, setTrialHits] = useState(0);
   const [trialMisses, setTrialMisses] = useState(0);
   const [trialFalsePositives, setTrialFalsePositives] = useState(0);
-  const [loggedTrials, setLoggedTrials] = useState<TrialRecord[]>([]);
   const [exportedTrialJSON, setExportedTrialJSON] = useState<string | null>(null);
 
   // Live telemetry
@@ -80,6 +86,11 @@ export function VisionDevHarness() {
       switch (evt.t) {
         case 'head.pointer':
           setPointer({ x: evt.x, y: evt.y });
+          if (soakRunning) {
+            setSoakFrameCount((fc) => fc + 1);
+            const drift = Math.sqrt(Math.pow(evt.x - 0.5, 2) + Math.pow(evt.y - 0.5, 2));
+            setSoakMaxDrift((prev) => Math.max(prev, drift));
+          }
           return;
         case 'head.quadrant':
           setActiveQuadrant(evt.q);
@@ -118,7 +129,20 @@ export function VisionDevHarness() {
       unsub();
       handle.tracker.stop();
     };
-  }, []);
+  }, [soakRunning]);
+
+  // Soak Test Timer
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (soakRunning) {
+      interval = setInterval(() => {
+        setSoakElapsedSec((s) => s + 1);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [soakRunning]);
 
   const handleStartCamera = async () => {
     if (!moduleHandleRef.current) return;
@@ -128,7 +152,6 @@ export function VisionDevHarness() {
       requestCanvasRender();
     } catch (err) {
       console.error('Failed to start camera:', err);
-      alert('Could not access webcam.');
     }
   };
 
@@ -141,6 +164,23 @@ export function VisionDevHarness() {
   const handleStartSetup = () => {
     if (!moduleHandleRef.current) return;
     moduleHandleRef.current.tracker.startSetup(performance.now());
+  };
+
+  const handleTriggerErrorState = (errType: VisionErrorState) => {
+    setActiveErrorState(errType);
+    if (!moduleHandleRef.current) return;
+    moduleHandleRef.current.tracker.simulateErrorState(errType);
+  };
+
+  const handleToggleSoakTest = () => {
+    if (!soakRunning) {
+      setSoakElapsedSec(0);
+      setSoakFrameCount(0);
+      setSoakMaxDrift(0);
+      setSoakRunning(true);
+    } else {
+      setSoakRunning(false);
+    }
   };
 
   const handleApplyPreset = (level: 0 | 1 | 2) => {
@@ -156,25 +196,6 @@ export function VisionDevHarness() {
     }
   };
 
-  const updateThresholds = (
-    newMinCutoff = minCutoff,
-    newBeta = beta,
-    newGain = gain,
-    newDeadzone = deadzone,
-    newFlickVel = flickVel,
-    newNodDelta = nodDelta,
-    newShakeDelta = shakeDelta
-  ) => {
-    if (!moduleHandleRef.current) return;
-    const tracker = moduleHandleRef.current.tracker;
-    tracker.setFilterParams(newMinCutoff, newBeta, newGain, newDeadzone);
-    tracker.gestureAnalyzer.setConfig({
-      flickVelocityThreshold: newFlickVel,
-      nodDeltaThreshold: newNodDelta,
-      shakeDeltaThreshold: newShakeDelta,
-    });
-  };
-
   const handleLogTrial = () => {
     const trial: TrialRecord = {
       action: trialAction,
@@ -184,7 +205,6 @@ export function VisionDevHarness() {
       falsePositives: trialFalsePositives,
     };
     trialManagerRef.current.addTrial(trial);
-    setLoggedTrials(trialManagerRef.current.getTrials());
     setTrialHits(0);
     setTrialMisses(0);
     setTrialFalsePositives(0);
@@ -235,85 +255,117 @@ export function VisionDevHarness() {
   const trialStats = trialManagerRef.current.calculateStats();
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', padding: 18, backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh' }}>
-      <header style={{ marginBottom: 14, borderBottom: '1px solid #334155', paddingBottom: 10 }}>
-        <h1 style={{ margin: 0, fontSize: 24, color: '#38bdf8' }}>🎥 Vision Dev Harness & Chaos Lab (P1)</h1>
-        <p style={{ margin: '4px 0 0 0', color: '#94a3b8', fontSize: 13 }}>
-          Tuning Dashboard, Trial Logger (Hits/Misses/FP), and Chaos Lab Impairment Presets
+    <div style={{ fontFamily: 'system-ui, sans-serif', padding: 16, backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh' }}>
+      <header style={{ marginBottom: 12, borderBottom: '1px solid #334155', paddingBottom: 8 }}>
+        <h1 style={{ margin: 0, fontSize: 22, color: '#38bdf8' }}>🎥 Vision Dev Harness - Prompt 6 Polish & Robustness</h1>
+        <p style={{ margin: '2px 0 0 0', color: '#94a3b8', fontSize: 12 }}>
+          Error States, Auto-Recovery, Tab Throttling, Soak Test Monitor, and Buffer Allocation Verification
         </p>
       </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 480px', gap: 16 }}>
-        {/* Left Column: Viewport, Trial Logger & Controls */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 480px', gap: 14 }}>
+        {/* Left Column */}
         <div>
-          {/* Main Controls */}
+          {/* Main Controls Bar */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             {!isCameraStarted ? (
-              <button onClick={handleStartCamera} style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              <button onClick={handleStartCamera} style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 4, fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>
                 ▶ Start Webcam
               </button>
             ) : (
-              <button onClick={handleStopCamera} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              <button onClick={handleStopCamera} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 4, fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>
                 ⏹ Stop Webcam
               </button>
             )}
 
-            <button onClick={handleStartSetup} style={{ background: '#8b5cf6', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+            <button onClick={handleStartSetup} style={{ background: '#8b5cf6', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 4, fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>
               🛠️ Start Setup
             </button>
 
+            <button onClick={handleToggleSoakTest} style={{ background: soakRunning ? '#f59e0b' : '#10b981', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 4, fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>
+              {soakRunning ? '⏹ Stop Soak Test' : '⏱️ Run 10-Min Soak Test'}
+            </button>
+
             {!isRecording ? (
-              <button onClick={handleStartRecording} style={{ background: '#10b981', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              <button onClick={handleStartRecording} style={{ background: '#059669', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>
                 🔴 Record Trace
               </button>
             ) : (
-              <button onClick={handleStopRecording} style={{ background: '#f59e0b', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: 6, fontWeight: 600, cursor: 'pointer', fontSize: 13 }}>
+              <button onClick={handleStopRecording} style={{ background: '#d97706', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: 4, fontSize: 12, cursor: 'pointer' }}>
                 ⏹ Export Trace
               </button>
             )}
-
-            <button onClick={() => moduleHandleRef.current?.tracker.recenter()} style={{ background: '#334155', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
-              🎯 Recenter
-            </button>
           </div>
 
-          {/* Setup Progress if active */}
+          {/* Error State Demonstrator Bar */}
+          <div style={{ background: '#1e293b', border: '1px solid #334155', padding: 8, borderRadius: 6, marginBottom: 10, fontSize: 12 }}>
+            <span style={{ fontWeight: 600, color: '#f8fafc', marginRight: 8 }}>Demonstrate Error State:</span>
+            <div style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
+              {(['none', 'permission_denied', 'camera_busy', 'no_face', 'disconnected'] as VisionErrorState[]).map((err) => (
+                <button
+                  key={err}
+                  onClick={() => handleTriggerErrorState(err)}
+                  style={{
+                    background: activeErrorState === err ? '#ef4444' : '#334155',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '4px 8px',
+                    borderRadius: 4,
+                    fontSize: 11,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {err.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Soak Test Monitor Panel */}
+          {soakRunning && (
+            <div style={{ background: '#064e3b', border: '1px solid #10b981', padding: 10, borderRadius: 6, marginBottom: 10, fontSize: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, color: '#a7f3d0' }}>
+                <span>⏱️ 10-Minute Soak Test Running</span>
+                <span>Elapsed: {Math.floor(soakElapsedSec / 60)}m {soakElapsedSec % 60}s</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 6, textAlign: 'center', fontSize: 11 }}>
+                <div style={{ background: '#022c22', padding: 4, borderRadius: 4 }}>Frames: <b>{soakFrameCount}</b></div>
+                <div style={{ background: '#022c22', padding: 4, borderRadius: 4 }}>FPS: <b>{quality.fps} FPS</b></div>
+                <div style={{ background: '#022c22', padding: 4, borderRadius: 4 }}>Drift: <b>{soakMaxDrift.toFixed(3)}</b></div>
+              </div>
+            </div>
+          )}
+
+          {/* Setup Progress */}
           {setupState && (
-            <div style={{ background: '#1e1b4b', border: '1px solid #6366f1', padding: 10, borderRadius: 8, marginBottom: 10 }}>
+            <div style={{ background: '#1e1b4b', border: '1px solid #6366f1', padding: 8, borderRadius: 6, marginBottom: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600 }}>
                 <span style={{ color: '#a5b4fc' }}>Setup Step: {setupState.step.toUpperCase()}</span>
                 <span>{(setupState.progress * 100).toFixed(0)}%</span>
               </div>
-              <div style={{ background: '#312e81', height: 6, borderRadius: 3, margin: '6px 0' }}>
-                <div style={{ background: '#818cf8', width: `${setupState.progress * 100}%`, height: '100%' }} />
-              </div>
-              <div style={{ fontSize: 12, color: setupState.ok === false ? '#f87171' : '#e0e7ff' }}>
+              <div style={{ fontSize: 12, color: setupState.ok === false ? '#f87171' : '#e0e7ff', marginTop: 4 }}>
                 {setupState.prompt}
               </div>
             </div>
           )}
 
-          {/* Viewport Canvas with Quadrant Overlays */}
-          <div style={{ position: 'relative', width: '100%', height: 380, backgroundColor: '#020617', borderRadius: 10, overflow: 'hidden', border: '2px solid #334155' }}>
+          {/* Viewport Canvas */}
+          <div style={{ position: 'relative', width: '100%', height: 380, backgroundColor: '#020617', borderRadius: 8, overflow: 'hidden', border: '2px solid #334155' }}>
             <video ref={videoRef} style={{ display: 'none' }} />
             <canvas ref={canvasRef} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isCameraStarted ? 0.7 : 0.2 }} />
 
-            {/* Hysteresis Band (0.45..0.55) */}
-            <div style={{ position: 'absolute', left: '45%', width: '10%', top: 0, bottom: 0, backgroundColor: 'rgba(234, 179, 8, 0.08)', borderLeft: '1px dotted #eab308', borderRight: '1px dotted #eab308', pointerEvents: 'none' }} />
-            <div style={{ position: 'absolute', top: '45%', height: '10%', left: 0, right: 0, backgroundColor: 'rgba(234, 179, 8, 0.08)', borderTop: '1px dotted #eab308', borderBottom: '1px dotted #eab308', pointerEvents: 'none' }} />
-
             {/* Quadrant Highlights */}
             <div style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', pointerEvents: 'none' }}>
-              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'TL' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', padding: 8, fontWeight: 700, color: activeQuadrant === 'TL' ? '#38bdf8' : '#64748b', fontSize: 12 }}>
+              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'TL' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', padding: 6, fontWeight: 700, color: activeQuadrant === 'TL' ? '#38bdf8' : '#64748b', fontSize: 11 }}>
                 TL {activeQuadrant === 'TL' && (isStable ? '✓ STABLE' : '⌛ DWELL')}
               </div>
-              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'TR' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', textAlign: 'right', padding: 8, fontWeight: 700, color: activeQuadrant === 'TR' ? '#38bdf8' : '#64748b', fontSize: 12 }}>
+              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'TR' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', textAlign: 'right', padding: 6, fontWeight: 700, color: activeQuadrant === 'TR' ? '#38bdf8' : '#64748b', fontSize: 11 }}>
                 TR {activeQuadrant === 'TR' && (isStable ? '✓ STABLE' : '⌛ DWELL')}
               </div>
-              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'BL' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', display: 'flex', alignItems: 'flex-end', padding: 8, fontWeight: 700, color: activeQuadrant === 'BL' ? '#38bdf8' : '#64748b', fontSize: 12 }}>
+              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'BL' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', display: 'flex', alignItems: 'flex-end', padding: 6, fontWeight: 700, color: activeQuadrant === 'BL' ? '#38bdf8' : '#64748b', fontSize: 11 }}>
                 BL {activeQuadrant === 'BL' && (isStable ? '✓ STABLE' : '⌛ DWELL')}
               </div>
-              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'BR' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: 8, fontWeight: 700, color: activeQuadrant === 'BR' ? '#38bdf8' : '#64748b', fontSize: 12 }}>
+              <div style={{ border: '1px dashed #475569', backgroundColor: activeQuadrant === 'BR' ? (isStable ? 'rgba(56, 189, 248, 0.3)' : 'rgba(234, 179, 8, 0.2)') : 'transparent', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: 6, fontWeight: 700, color: activeQuadrant === 'BR' ? '#38bdf8' : '#64748b', fontSize: 11 }}>
                 BR {activeQuadrant === 'BR' && (isStable ? '✓ STABLE' : '⌛ DWELL')}
               </div>
             </div>
@@ -321,178 +373,47 @@ export function VisionDevHarness() {
             {/* Pointer Dot */}
             <div style={{ position: 'absolute', left: `${pointer.x * 100}%`, top: `${pointer.y * 100}%`, width: 14, height: 14, borderRadius: '50%', backgroundColor: '#f43f5e', boxShadow: '0 0 10px #f43f5e', transform: 'translate(-50%, -50%)', pointerEvents: 'none' }} />
           </div>
-
-          {/* Quick Trial Mode Logger */}
-          <div style={{ marginTop: 12, background: '#1e293b', padding: 12, borderRadius: 8, border: '1px solid #334155' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <h3 style={{ margin: 0, fontSize: 14, color: '#38bdf8' }}>📝 Record a Trial (Hit / Miss / False-Positive)</h3>
-              <div style={{ fontSize: 12, color: '#94a3b8' }}>
-                Accuracy: <b style={{ color: '#4ade80' }}>{(trialStats.accuracy * 100).toFixed(1)}%</b> | FP Rate: <b style={{ color: '#f87171' }}>{(trialStats.falsePositiveRate * 100).toFixed(1)}%</b>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 8, fontSize: 12 }}>
-              <div>
-                <label>Tester:</label>
-                <select value={testerName} onChange={(e) => setTesterName(e.target.value)} style={{ width: '100%', background: '#090d16', color: '#fff', border: '1px solid #334155', padding: 4, borderRadius: 4 }}>
-                  <option value="Tester 1">Tester 1</option>
-                  <option value="Tester 2">Tester 2</option>
-                  <option value="Tester 3">Tester 3</option>
-                  <option value="Custom Tester">Custom Tester</option>
-                </select>
-              </div>
-
-              <div>
-                <label>Lighting:</label>
-                <select value={lightingCondition} onChange={(e) => setLightingCondition(e.target.value as 'normal' | 'low_light')} style={{ width: '100%', background: '#090d16', color: '#fff', border: '1px solid #334155', padding: 4, borderRadius: 4 }}>
-                  <option value="normal">Normal (Daylight)</option>
-                  <option value="low_light">Low Light (Dim)</option>
-                </select>
-              </div>
-
-              <div>
-                <label>Target Action:</label>
-                <select value={trialAction} onChange={(e) => setTrialAction(e.target.value as TrialRecord['action'])} style={{ width: '100%', background: '#090d16', color: '#fff', border: '1px solid #334155', padding: 4, borderRadius: 4 }}>
-                  <option value="nod">Nod (Yes)</option>
-                  <option value="shake">Shake (No)</option>
-                  <option value="flick_up">Flick Up</option>
-                  <option value="flick_down">Flick Down</option>
-                  <option value="flick_left">Flick Left</option>
-                  <option value="flick_right">Flick Right</option>
-                  <option value="neutral_reading">Reading Neutral (FP Test)</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Trial Counter Buttons */}
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-              <button onClick={() => setTrialHits((h) => h + 1)} style={{ flex: 1, background: '#15803d', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
-                +1 Hit ({trialHits})
-              </button>
-              <button onClick={() => setTrialMisses((m) => m + 1)} style={{ flex: 1, background: '#b91c1c', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
-                +1 Miss ({trialMisses})
-              </button>
-              <button onClick={() => setTrialFalsePositives((fp) => fp + 1)} style={{ flex: 1, background: '#c2410c', color: '#fff', border: 'none', padding: '6px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
-                +1 False Positive ({trialFalsePositives})
-              </button>
-              <button onClick={handleLogTrial} style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: 4, cursor: 'pointer', fontWeight: 600, fontSize: 12 }}>
-                Save Trial
-              </button>
-              <button onClick={handleExportTrialJSON} style={{ background: '#475569', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
-                Export JSON
-              </button>
-            </div>
-
-            {/* Exported JSON Modal/Textarea */}
-            {exportedTrialJSON && (
-              <div style={{ marginTop: 8 }}>
-                <textarea readOnly value={exportedTrialJSON} style={{ width: '100%', height: 70, background: '#090d16', color: '#38bdf8', border: '1px solid #334155', borderRadius: 4, fontSize: 10, fontFamily: 'monospace' }} />
-              </div>
-            )}
-          </div>
         </div>
 
-        {/* Right Column: Chaos Lab Impairments, Tuning & Quality */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Quality Telemetry */}
-          <div style={{ background: '#1e293b', padding: 12, borderRadius: 8, border: '1px solid #334155' }}>
-            <h3 style={{ margin: '0 0 8px 0', fontSize: 13, color: '#38bdf8' }}>📊 Quality Metrics (~500ms)</h3>
+        {/* Right Column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Quality Metrics */}
+          <div style={{ background: '#1e293b', padding: 10, borderRadius: 6, border: '1px solid #334155' }}>
+            <h3 style={{ margin: '0 0 6px 0', fontSize: 13, color: '#38bdf8' }}>📊 Performance & Quality</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, textAlign: 'center', fontSize: 11 }}>
-              <div style={{ background: '#090d16', padding: 6, borderRadius: 4 }}>
+              <div style={{ background: '#090d16', padding: 4, borderRadius: 4 }}>
                 <div style={{ color: '#94a3b8' }}>FPS</div>
                 <div style={{ fontWeight: 700, color: quality.fps >= 30 ? '#4ade80' : '#f87171' }}>{quality.fps}</div>
               </div>
-              <div style={{ background: '#090d16', padding: 6, borderRadius: 4 }}>
+              <div style={{ background: '#090d16', padding: 4, borderRadius: 4 }}>
                 <div style={{ color: '#94a3b8' }}>Jitter</div>
                 <div style={{ fontWeight: 700, color: '#38bdf8' }}>{quality.jitter.toFixed(3)}</div>
               </div>
-              <div style={{ background: '#090d16', padding: 6, borderRadius: 4 }}>
+              <div style={{ background: '#090d16', padding: 4, borderRadius: 4 }}>
                 <div style={{ color: '#94a3b8' }}>Luma</div>
                 <div style={{ fontWeight: 700, color: '#fbbf24' }}>{(quality.brightness * 100).toFixed(0)}%</div>
               </div>
-              <div style={{ background: '#090d16', padding: 6, borderRadius: 4 }}>
-                <div style={{ color: '#94a3b8' }}>Confidence</div>
+              <div style={{ background: '#090d16', padding: 4, borderRadius: 4 }}>
+                <div style={{ color: '#94a3b8' }}>Conf</div>
                 <div style={{ fontWeight: 700, color: '#4ade80' }}>{(quality.faceConf * 100).toFixed(0)}%</div>
               </div>
             </div>
           </div>
 
-          {/* Chaos Lab Impairment Presets */}
-          <div style={{ background: '#1e293b', padding: 12, borderRadius: 8, border: '1px solid #334155', fontSize: 12 }}>
-            <h3 style={{ margin: '0 0 8px 0', fontSize: 13, color: '#f8fafc' }}>🧪 Chaos Lab Presets</h3>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-              <button
-                onClick={() => handleApplyPreset(0)}
-                style={{ flex: 1, background: impairmentLevel === 0 ? '#0284c7' : '#334155', color: '#fff', border: 'none', padding: '6px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
-              >
-                Normal (Level 0)
-              </button>
-              <button
-                onClick={() => handleApplyPreset(1)}
-                style={{ flex: 1, background: impairmentLevel === 1 ? '#eab308' : '#334155', color: '#fff', border: 'none', padding: '6px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
-              >
-                Mild (Level 1)
-              </button>
-              <button
-                onClick={() => handleApplyPreset(2)}
-                style={{ flex: 1, background: impairmentLevel === 2 ? '#ef4444' : '#334155', color: '#fff', border: 'none', padding: '6px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
-              >
-                Severe (Level 2)
-              </button>
-            </div>
-            <div style={{ color: '#94a3b8', fontSize: 11, background: '#090d16', padding: 6, borderRadius: 4 }}>
-              {impairmentLevel === 0 && 'Normal: No tremor, 100% brightness, 0% frame drops.'}
-              {impairmentLevel === 1 && 'Level 1: tremorAmp=0.035 (~2°), tremorHz=[4,7], brightness=0.50, dropFramePct=15%.'}
-              {impairmentLevel === 2 && 'Level 2: tremorAmp=0.090 (~5°), tremorHz=[5,11], brightness=0.25, dropFramePct=40%.'}
+          {/* Chaos Lab Presets */}
+          <div style={{ background: '#1e293b', padding: 10, borderRadius: 6, border: '1px solid #334155', fontSize: 11 }}>
+            <h3 style={{ margin: '0 0 6px 0', fontSize: 13, color: '#f8fafc' }}>🧪 Chaos Lab Presets</h3>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => handleApplyPreset(0)} style={{ flex: 1, background: impairmentLevel === 0 ? '#0284c7' : '#334155', color: '#fff', border: 'none', padding: '4px 6px', borderRadius: 4, cursor: 'pointer' }}>Normal</button>
+              <button onClick={() => handleApplyPreset(1)} style={{ flex: 1, background: impairmentLevel === 1 ? '#eab308' : '#334155', color: '#fff', border: 'none', padding: '4px 6px', borderRadius: 4, cursor: 'pointer' }}>Mild (L1)</button>
+              <button onClick={() => handleApplyPreset(2)} style={{ flex: 1, background: impairmentLevel === 2 ? '#ef4444' : '#334155', color: '#fff', border: 'none', padding: '4px 6px', borderRadius: 4, cursor: 'pointer' }}>Severe (L2)</button>
             </div>
           </div>
 
-          {/* Threshold Tuning Sliders */}
-          <div style={{ background: '#1e293b', padding: 12, borderRadius: 8, border: '1px solid #334155', fontSize: 12 }}>
-            <h3 style={{ margin: '0 0 8px 0', fontSize: 13, color: '#f8fafc' }}>🎛️ Real-Person Tuned Thresholds</h3>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 6 }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Gain:</span><b>{gain.toFixed(1)}x</b>
-                </div>
-                <input type="range" min="0.5" max="5.0" step="0.1" value={gain} onChange={(e) => { const v = parseFloat(e.target.value); setGain(v); updateThresholds(minCutoff, beta, v, deadzone, flickVel, nodDelta, shakeDelta); }} style={{ width: '100%' }} />
-              </div>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Deadzone:</span><b>{deadzone.toFixed(3)} rad</b>
-                </div>
-                <input type="range" min="0.00" max="0.08" step="0.005" value={deadzone} onChange={(e) => { const v = parseFloat(e.target.value); setDeadzone(v); updateThresholds(minCutoff, beta, gain, v, flickVel, nodDelta, shakeDelta); }} style={{ width: '100%' }} />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 6 }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Flick Vel:</span><b>{flickVel.toFixed(1)} rad/s</b>
-                </div>
-                <input type="range" min="1.2" max="4.5" step="0.1" value={flickVel} onChange={(e) => { const v = parseFloat(e.target.value); setFlickVel(v); updateThresholds(minCutoff, beta, gain, deadzone, v, nodDelta, shakeDelta); }} style={{ width: '100%' }} />
-              </div>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Nod Delta:</span><b>{nodDelta.toFixed(2)} rad</b>
-                </div>
-                <input type="range" min="0.03" max="0.20" step="0.01" value={nodDelta} onChange={(e) => { const v = parseFloat(e.target.value); setNodDelta(v); updateThresholds(minCutoff, beta, gain, deadzone, flickVel, v, shakeDelta); }} style={{ width: '100%' }} />
-              </div>
-            </div>
-
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Shake Delta:</span><b>{shakeDelta.toFixed(2)} rad</b>
-              </div>
-              <input type="range" min="0.04" max="0.20" step="0.01" value={shakeDelta} onChange={(e) => { const v = parseFloat(e.target.value); setShakeDelta(v); updateThresholds(minCutoff, beta, gain, deadzone, flickVel, nodDelta, v); }} style={{ width: '100%' }} />
-            </div>
-          </div>
-
-          {/* Event Stream */}
-          <div style={{ background: '#1e293b', padding: 10, borderRadius: 8, border: '1px solid #334155', flex: 1, display: 'flex', flexDirection: 'column' }}>
+          {/* Live Event Log */}
+          <div style={{ background: '#1e293b', padding: 10, borderRadius: 6, border: '1px solid #334155', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <h3 style={{ margin: '0 0 6px 0', fontSize: 13, color: '#f8fafc' }}>📜 Live Event Stream</h3>
-            <div style={{ flex: 1, overflowY: 'auto', maxHeight: 140, background: '#090d16', padding: 6, borderRadius: 4, fontSize: 10, fontFamily: 'monospace' }}>
+            <div style={{ flex: 1, overflowY: 'auto', maxHeight: 180, background: '#090d16', padding: 6, borderRadius: 4, fontSize: 10, fontFamily: 'monospace' }}>
               {eventLog.map((log) => (
                 <div key={log.id} style={{ marginBottom: 2, color: '#38bdf8' }}>
                   <span style={{ color: '#64748b' }}>[{log.ts}]</span> {log.text}
