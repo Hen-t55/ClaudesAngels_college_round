@@ -30,6 +30,7 @@ export function VoiceDevHarness() {
   const [noiseFloor, setNoiseFloor] = useState(0.05);
   const [recognizerActive, setRecognizerActive] = useState(false);
   const [selectedGear, setSelectedGear] = useState<Gear>('hop');
+  const [latencies, setLatencies] = useState({ speechToActionMs: 0, quadrantHighlightMs: 0 });
 
   useEffect(() => {
     const orch = startOrchestrator({ transport: tSidepanel, initialGear: selectedGear });
@@ -54,6 +55,7 @@ export function VoiceDevHarness() {
     // Track overlay state broadcast
     const offOverlay = tSidepanel.on('overlay', (st) => {
       setOverlayState(st);
+      setLatencies(orch.getLatencyMetrics());
     });
 
     mod.onIntent((intent) => {
@@ -61,7 +63,12 @@ export function VoiceDevHarness() {
       orch.handleIntent(intent);
     });
 
+    const timer = setInterval(() => {
+      setLatencies(orch.getLatencyMetrics());
+    }, 200);
+
     return () => {
+      clearInterval(timer);
       offSpeech();
       offOverlay();
       orch.stop();
@@ -144,6 +151,20 @@ export function VoiceDevHarness() {
     // 4. Simulate voice utterance: "click the second blue button"
     setSimText('click the second blue button');
     speechModule.simulateUtterance('click the second blue button');
+  };
+
+  const runLatencyBenchmark = () => {
+    if (!mockHead || !mockEngine || !speechModule || !orchestrator) return;
+    mockHead.sendQuadrant('TL');
+    mockEngine.setResolveBehavior((req) => {
+      mockEngine.simulateResolveResult(req.id, 'one', [
+        { id: 'btn_bench', label: 'Benchmark Target', role: 'button', rect: { x: 50, y: 50, w: 100, h: 40 } },
+      ]);
+    });
+    speechModule.simulateUtterance('click benchmark target');
+    setTimeout(() => {
+      setLatencies(orchestrator.getLatencyMetrics());
+    }, 50);
   };
 
   return (
@@ -240,6 +261,43 @@ export function VoiceDevHarness() {
         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: 10 }}>
           <div style={{ fontSize: 12, color: '#64748b' }}>Matches Found</div>
           <div style={{ fontSize: 16, fontWeight: 'bold', color: '#0f172a' }}>{overlayState?.matches.length || 0}</div>
+        </div>
+      </div>
+
+      {/* Latency Performance Readout against Brief Budgets */}
+      <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: 14, marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <h3 style={{ margin: 0, color: '#166534', fontSize: 16 }}>⚡ Latency Performance & Budgets</h3>
+          <button
+            onClick={runLatencyBenchmark}
+            style={{ padding: '6px 12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, cursor: 'pointer' }}
+          >
+            ⏱️ Run Latency Benchmark
+          </button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ background: '#fff', border: '1px solid #dcfce7', borderRadius: 6, padding: 10 }}>
+            <div style={{ fontSize: 12, color: '#64748b' }}>Speech-to-Action Latency (Budget: &lt; 700 ms)</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
+              <span style={{ fontSize: 20, fontWeight: 'bold', color: latencies.speechToActionMs <= 700 ? '#15803d' : '#b91c1c' }}>
+                {latencies.speechToActionMs > 0 ? `${latencies.speechToActionMs.toFixed(1)} ms` : '—'}
+              </span>
+              <span style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, background: latencies.speechToActionMs <= 700 ? '#dcfce7' : '#fee2e2', color: latencies.speechToActionMs <= 700 ? '#15803d' : '#b91c1c' }}>
+                {latencies.speechToActionMs === 0 ? 'READY' : latencies.speechToActionMs <= 700 ? 'PASS (In Budget)' : 'OVERRUN'}
+              </span>
+            </div>
+          </div>
+          <div style={{ background: '#fff', border: '1px solid #dcfce7', borderRadius: 6, padding: 10 }}>
+            <div style={{ fontSize: 12, color: '#64748b' }}>Quadrant Highlight Latency (Budget: &lt; 100 ms)</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
+              <span style={{ fontSize: 20, fontWeight: 'bold', color: latencies.quadrantHighlightMs <= 100 ? '#15803d' : '#b91c1c' }}>
+                {latencies.quadrantHighlightMs > 0 ? `${latencies.quadrantHighlightMs.toFixed(1)} ms` : '—'}
+              </span>
+              <span style={{ fontSize: 12, padding: '2px 6px', borderRadius: 4, background: latencies.quadrantHighlightMs <= 100 ? '#dcfce7' : '#fee2e2', color: latencies.quadrantHighlightMs <= 100 ? '#15803d' : '#b91c1c' }}>
+                {latencies.quadrantHighlightMs === 0 ? 'READY' : latencies.quadrantHighlightMs <= 100 ? 'PASS (In Budget)' : 'OVERRUN'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
