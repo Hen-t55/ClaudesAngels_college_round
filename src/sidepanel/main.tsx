@@ -41,12 +41,22 @@ loadSettings().then((settings) => {
   });
 
   // Handle settings.get / settings.set requests that come in from the UI or content
-  // (the orchestrator handles get/set internally; here we also persist writes back to storage)
   transport.on('settings', (msg) => {
     if (msg.t === 'settings.set') {
       saveSettings(msg.patch as Partial<typeof settings>).catch(console.error);
     }
   });
+
+  // Handle tab changed mid-action: re-arm and clear state when active tab switches
+  if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.onActivated) {
+    chrome.tabs.onActivated.addListener(() => {
+      transport.send('engine.request', { t: 'engine.clear' });
+      transport.send('overlay', {
+        ...orchestrator.getOverlayState(),
+        banner: { kind: 'info', text: 'Tab changed — re-armed to new page', timeoutMs: 2000 },
+      });
+    });
+  }
 
   // Demo Mode toggle helper (Ctrl+Shift+D or Alt+D)
   const toggleDemoMode = () => {
