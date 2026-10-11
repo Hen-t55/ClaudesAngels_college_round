@@ -67,7 +67,7 @@ export type EngineRequest =
 export type EngineEvent =
   | { t: 'engine.result'; id: string; status: 'one'|'many'|'none'; matches: MatchMeta[]; widened?: boolean; done?: boolean }
   | { t: 'engine.focus'; matchId: string }
-  | { t: 'engine.zoomState'; rect: Rect; cells: { n: number; rect: Rect }[]; depth: number; outcome?: 'clicked'|'many'|'center' }
+  | { t: 'engine.zoomState'; rect: Rect; cells: { n: number; rect: Rect }[]; depth: number; outcome?: 'one'|'many'|'clicked'|'center' }
   | { t: 'engine.confirmNeeded'; actionId: string; info: Important }
   | { t: 'engine.done'; ok: boolean; what: string }
   | { t: 'engine.ready'; url: string };

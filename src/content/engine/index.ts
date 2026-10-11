@@ -432,7 +432,7 @@ export class Engine {
     }
   }
 
-  private emitZoomState(rect: Rect, outcome?: 'clicked' | 'many' | 'center'): void {
+  private emitZoomState(rect: Rect, outcome?: 'one' | 'many' | 'clicked' | 'center'): void {
     const cellW = rect.w / 3;
     const cellH = rect.h / 3;
     const cells: { n: number; rect: Rect }[] = [];
