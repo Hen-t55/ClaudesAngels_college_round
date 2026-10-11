@@ -45,10 +45,28 @@ export function chromeTransport(role: 'sidepanel' | 'content'): Transport {
   return {
     send(ch, data) {
       const env = { [ENVELOPE_KEY]: true, ch, data } as unknown as Envelope;
+
+      // 1. Dispatch locally in-process (between vision, voice, orchestrator, App in sidepanel)
+      const set = listeners.get(ch);
+      if (set) {
+        for (const fn of set) {
+          try {
+            fn(data as never);
+          } catch (err) {
+            console.error('[bus] local listener error:', err);
+          }
+        }
+      }
+
+      // 2. Dispatch cross-process via Chrome messaging
       if (role === 'sidepanel') {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           const id = tabs[0]?.id;
-          if (id !== undefined) chrome.tabs.sendMessage(id, env);
+          if (id !== undefined) {
+            chrome.tabs.sendMessage(id, env).catch(() => {
+              // Tab may not have content script injected (e.g. chrome:// pages)
+            });
+          }
         });
       } else {
         chrome.runtime.sendMessage(env).catch(() => { /* no listener yet */ });
