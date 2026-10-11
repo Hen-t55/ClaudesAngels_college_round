@@ -179,6 +179,17 @@ export class SpeechModule {
   private initAndStartRecognizer(): void {
     if (!this.running) return;
 
+    if (this.recognition) {
+      try {
+        this.recognition.onstart = null;
+        this.recognition.onresult = null;
+        this.recognition.onerror = null;
+        this.recognition.onend = null;
+        this.recognition.abort();
+      } catch {}
+      this.recognition = null;
+    }
+
     // Check for webkitSpeechRecognition or SpeechRecognition
     const SpeechClass = (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike; SpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition ||
       (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition;
@@ -205,6 +216,7 @@ export class SpeechModule {
       };
 
       recognition.onresult = (event: SpeechRecognitionEventLike) => {
+        this.backoffDelayMs = 250; // Keep backoff minimal on active speech
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const res = event.results[i];
           const transcript = res[0]?.transcript?.trim() || '';
@@ -245,13 +257,18 @@ export class SpeechModule {
       };
 
       recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
+        // Do not crash or emit fatal error on normal silence ('no-speech') or manual abort
+        if (event.error === 'no-speech' || event.error === 'aborted') {
+          this.utteranceStarted = false;
+          return;
+        }
+
         console.warn('[SpeechModule] Speech recognition error:', event.error, event.message);
-        // Do not crash on 'no-speech' or 'aborted'
-        if (event.error === 'no-speech' || event.error === 'audio-capture') {
+        if (event.error === 'audio-capture') {
           this.utteranceStarted = false;
         }
 
-        // Emit speech.error for orchestrator error state handling
+        // Emit speech.error for orchestrator error state handling (not-allowed, audio-capture, etc.)
         this.transport.send('speech', {
           t: 'speech.error',
           error: event.error,
@@ -261,23 +278,30 @@ export class SpeechModule {
 
       recognition.onend = () => {
         this.utteranceStarted = false;
+        this.recognition = null;
         if (!this.running) return;
 
-        // Auto-restart with exponential backoff
+        // Auto-restart immediately so recognition never permanently drops out
+        if (this.restartTimer) {
+          window.clearTimeout(this.restartTimer);
+          this.restartTimer = null;
+        }
         this.restartTimer = window.setTimeout(() => {
-          this.backoffDelayMs = Math.min(this.backoffDelayMs * 1.5, this.maxBackoffDelayMs);
           this.initAndStartRecognizer();
-        }, this.backoffDelayMs);
+        }, 100);
       };
 
       recognition.start();
     } catch (err) {
       console.warn('[SpeechModule] Error starting recognition:', err);
       if (this.running) {
+        if (this.restartTimer) {
+          window.clearTimeout(this.restartTimer);
+          this.restartTimer = null;
+        }
         this.restartTimer = window.setTimeout(() => {
-          this.backoffDelayMs = Math.min(this.backoffDelayMs * 1.5, this.maxBackoffDelayMs);
           this.initAndStartRecognizer();
-        }, this.backoffDelayMs);
+        }, 300);
       }
     }
   }

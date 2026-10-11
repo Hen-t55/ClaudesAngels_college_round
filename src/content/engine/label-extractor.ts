@@ -132,7 +132,20 @@ export function extractLabel(el: Element): { raw: string; normalized: string } {
   const anyEl = el as any;
   const visibleText = anyEl.innerText || anyEl.textContent || '';
   if (visibleText && typeof visibleText === 'string' && visibleText.trim()) {
-    const raw = visibleText.trim();
+    let raw = visibleText.trim();
+
+    // Contextual card/section enrichment (e.g. card title + action button label)
+    const card = el.closest('.card, article, section, [class*="card"], li, [class*="item"]');
+    if (card && card !== el) {
+      const titleEl = card.querySelector('.card-title, [class*="title"], h1, h2, h3, h4, h5, h6, strong');
+      if (titleEl && titleEl !== el && !el.contains(titleEl)) {
+        const titleText = (titleEl as HTMLElement).innerText || titleEl.textContent || '';
+        if (titleText.trim() && !raw.toLowerCase().includes(titleText.trim().toLowerCase())) {
+          raw = `${titleText.trim()} ${raw}`;
+        }
+      }
+    }
+
     return { raw, normalized: normalizeLabel(raw) };
   }
 

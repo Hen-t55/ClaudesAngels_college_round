@@ -317,6 +317,17 @@ export function parseIntent(raw: string, options: { mode?: 'command' | 'dictatio
     return fuzzyResults[0].item.intent;
   }
 
+  // 7. Natural target fallback: if user names a target without saying "click"
+  // (e.g. "add to cart", "blue button", "fake shop", "open demo", "checkout")
+  if (text && text.length >= 2 && !['mode', 'cancel', 'no', 'yes', 'select', 'help'].includes(text)) {
+    const targetQuery = parseTargetQuery(text);
+    return {
+      k: 'target',
+      verb: 'click',
+      query: { ...targetQuery, raw: targetQuery.raw || text },
+    };
+  }
+
   return null;
 }
 

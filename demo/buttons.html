@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Handsfree Button Test Suite</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #0b0f19;
+      color: #f1f5f9;
+      padding: 32px 24px;
+      min-height: 100vh;
+    }
+    .header {
+      max-width: 1200px;
+      margin: 0 auto 24px auto;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 800;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .tagline {
+      font-size: 14px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+    .hud {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .hud-badge {
+      background: #1e293b;
+      border: 1px solid #334155;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #cbd5e1;
+    }
+    .hud-badge span {
+      color: #38bdf8;
+      font-weight: 700;
+    }
+    .log-panel {
+      max-width: 1200px;
+      margin: 0 auto 28px auto;
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+    }
+    .log-text {
+      color: #34d399;
+      font-weight: 600;
+      font-family: monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .quadrant-grid {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 860px) {
+      .quadrant-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .quadrant-zone {
+      background: #131b2e;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+    }
+    .zone-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 10px;
+    }
+    .zone-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .zone-tag {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: #1e293b;
+      color: #38bdf8;
+      border: 1px solid #334155;
+    }
+    .section-desc {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-top: -8px;
+    }
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .btn-col {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* ALL INTERACTIVE ELEMENTS ARE EXCLUSIVELY <button> TAGS */
+    button {
+      appearance: none;
+      -webkit-appearance: none;
+      font-family: inherit;
+      cursor: pointer;
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      border: 1px solid transparent;
+      transition: all 0.15s ease-in-out;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      user-select: none;
+    }
+    button:focus-visible {
+      outline: 2px solid #38bdf8;
+      outline-offset: 2px;
+    }
+    button:active {
+      transform: scale(0.97);
+    }
+
+    /* Styled color variants for testing color recognition */
+    .btn-blue {
+      background-color: #2563eb;
+      color: #ffffff;
+    }
+    .btn-blue:hover {
+      background-color: #1d4ed8;
+    }
+    .btn-red {
+      background-color: #dc2626;
+      color: #ffffff;
+    }
+    .btn-red:hover {
+      background-color: #b91c1c;
+    }
+    .btn-green {
+      background-color: #16a34a;
+      color: #ffffff;
+    }
+    .btn-green:hover {
+      background-color: #15803d;
+    }
+    .btn-yellow {
+      background-color: #ca8a04;
+      color: #ffffff;
+    }
+    .btn-yellow:hover {
+      background-color: #a16207;
+    }
+    .btn-purple {
+      background-color: #9333ea;
+      color: #ffffff;
+    }
+    .btn-purple:hover {
+      background-color: #7e22ce;
+    }
+    .btn-orange {
+      background-color: #ea580c;
+      color: #ffffff;
+    }
+    .btn-orange:hover {
+      background-color: #c2410c;
+    }
+    .btn-gray {
+      background-color: #334155;
+      color: #f1f5f9;
+      border-color: #475569;
+    }
+    .btn-gray:hover {
+      background-color: #475569;
+    }
+    .btn-outline {
+      background-color: transparent;
+      color: #38bdf8;
+      border-color: #0284c7;
+    }
+    .btn-outline:hover {
+      background-color: rgba(2, 132, 199, 0.15);
+    }
+    .btn-subtle {
+      background-color: #1e293b;
+      color: #94a3b8;
+      border-color: #334155;
+      padding: 8px 14px;
+      font-size: 13px;
+    }
+    .btn-subtle:hover {
+      color: #f1f5f9;
+      background-color: #334155;
+    }
+
+    .item-card {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 14px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .item-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .item-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: #f1f5f9;
+    }
+    .item-price {
+      font-size: 12px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>⚡ Handsfree Button Showcase</h1>
+      <p class="tagline">Pure &lt;button&gt; testbed designed for head quadrant targeting and voice command verification</p>
+    </div>
+    <div class="hud">
+      <div class="hud-badge">Total Clicks: <span id="click-count">0</span></div>
+      <button class="btn-subtle" id="reset-counter-btn" type="button">Reset Counters</button>
+    </div>
+  </div>
+
+  <div class="log-panel">
+    <div>Last Triggered: <span id="last-event" class="log-text">Ready. Speak or hover your head quadrant...</span></div>
+    <button class="btn-subtle" id="clear-log-btn" type="button">Clear Log</button>
+  </div>
+
+  <div class="quadrant-grid">
+    <!-- QUADRANT TL: Top-Left (Color Variants & Direct Targeting) -->
+    <div class="quadrant-zone" id="zone-tl">
+      <div class="zone-header">
+        <div class="zone-title">🎨 Color Buttons (TL Quadrant)</div>
+        <span class="zone-tag">TL</span>
+      </div>
+      <p class="section-desc">Try saying: "click red button", "blue button", "click green", or "yellow button"</p>
+
+      <div class="btn-group">
+        <button class="btn-red" id="btn-red" type="button">Red Button</button>
+        <button class="btn-blue" id="btn-blue" type="button">Blue Button</button>
+        <button class="btn-green" id="btn-green" type="button">Green Button</button>
+        <button class="btn-yellow" id="btn-yellow" type="button">Yellow Button</button>
+        <button class="btn-purple" id="btn-purple" type="button">Purple Button</button>
+        <button class="btn-orange" id="btn-orange" type="button">Orange Button</button>
+      </div>
+    </div>
+
+    <!-- QUADRANT TR: Top-Right (Common Routine Actions) -->
+    <div class="quadrant-zone" id="zone-tr">
+      <div class="zone-header">
+        <div class="zone-title">⚡ Action Commands (TR Quadrant)</div>
+        <span class="zone-tag">TR</span>
+      </div>
+      <p class="section-desc">Try saying: "click save changes", "submit", "refresh data", or "cancel"</p>
+
+      <div class="btn-group">
+        <button class="btn-blue" id="btn-save" type="button">Save Changes</button>
+        <button class="btn-green" id="btn-submit" type="button">Submit Feedback</button>
+        <button class="btn-gray" id="btn-refresh" type="button">Refresh Data</button>
+        <button class="btn-outline" id="btn-download" type="button">Download Report</button>
+        <button class="btn-red" id="btn-cancel" type="button">Cancel Order</button>
+      </div>
+    </div>
+
+    <!-- QUADRANT BL: Bottom-Left (Repeated Identical Buttons for Disambiguation & Badges) -->
+    <div class="quadrant-zone" id="zone-bl">
+      <div class="zone-header">
+        <div class="zone-title">🔁 Repeated Buttons (BL Quadrant)</div>
+        <span class="zone-tag">BL</span>
+      </div>
+      <p class="section-desc">Try saying: "add to cart", "first add to cart", or "say number" after badges show</p>
+
+      <div class="btn-col">
+        <div class="item-card">
+          <div class="item-info">
+            <span class="item-title">Mechanical Keyboard</span>
+            <span class="item-price">$120.00</span>
+          </div>
+          <button class="btn-blue" id="btn-cart-1" type="button">Add to Cart</button>
+        </div>
+
+        <div class="item-card">
+          <div class="item-info">
+            <span class="item-title">Wireless Mouse</span>
+            <span class="item-price">$65.00</span>
+          </div>
+          <button class="btn-blue" id="btn-cart-2" type="button">Add to Cart</button>
+        </div>
+
+        <div class="item-card">
+          <div class="item-info">
+            <span class="item-title">Noise-Canceling Headset</span>
+            <span class="item-price">$199.00</span>
+          </div>
+          <button class="btn-blue" id="btn-cart-3" type="button">Add to Cart</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- QUADRANT BR: Bottom-Right (Audio & Media Controls) -->
+    <div class="quadrant-zone" id="zone-br">
+      <div class="zone-header">
+        <div class="zone-title">🎵 Media & State Controls (BR Quadrant)</div>
+        <span class="zone-tag">BR</span>
+      </div>
+      <p class="section-desc">Try saying: "play audio", "pause audio", "next track", or "mute"</p>
+
+      <div class="btn-group">
+        <button class="btn-green" id="btn-play" type="button">Play Audio</button>
+        <button class="btn-yellow" id="btn-pause" type="button">Pause Audio</button>
+        <button class="btn-gray" id="btn-next" type="button">Next Track</button>
+        <button class="btn-gray" id="btn-prev" type="button">Previous Track</button>
+        <button class="btn-outline" id="btn-mute" type="button">Mute Volume</button>
+        <button class="btn-red" id="btn-stop" type="button">Stop Stream</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      let clickCount = 0;
+      const countEl = document.getElementById('click-count');
+      const logEl = document.getElementById('last-event');
+
+      function recordClick(name, btn) {
+        clickCount++;
+        countEl.textContent = String(clickCount);
+        logEl.textContent = 'Clicked "' + name + '" (' + (btn.id || 'button') + ') at ' + new Date().toLocaleTimeString();
+
+        // Visual flash feedback
+        const origTransform = btn.style.transform;
+        const origOutline = btn.style.outline;
+        btn.style.transform = 'scale(0.94)';
+        btn.style.outline = '3px solid #38bdf8';
+        setTimeout(() => {
+          btn.style.transform = origTransform;
+          btn.style.outline = origOutline;
+        }, 200);
+      }
+
+      document.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (btn.id === 'reset-counter-btn') {
+            clickCount = 0;
+            countEl.textContent = '0';
+            logEl.textContent = 'Counter reset to 0';
+            return;
+          }
+          if (btn.id === 'clear-log-btn') {
+            logEl.textContent = 'Log cleared.';
+            return;
+          }
+          recordClick(btn.innerText.trim(), btn);
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
