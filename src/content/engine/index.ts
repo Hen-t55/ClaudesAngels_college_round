@@ -193,19 +193,6 @@ export class Engine {
       };
     });
 
-    // If exactly one match, check for important confirmation
-    if (status === 'one' && matches.length === 1) {
-      const topMeta = matchMetas[0];
-      if (topMeta.important) {
-        this.pendingConfirm = { id: reqId, matchId: topMeta.id, verb };
-        this.transport?.send('engine.event', {
-          t: 'engine.confirmNeeded',
-          actionId: reqId,
-          info: topMeta.important,
-        });
-      }
-    }
-
     this.transport?.send('engine.event', {
       t: 'engine.result',
       id: reqId,
@@ -354,7 +341,7 @@ export class Engine {
       const all = this.indexer.index();
       const inCell = Resolver.filterByScope(all, { k: 'rect', rect: cellRect });
 
-      if (inCell.length === 1) {
+      if (inCell.length === 1 && this.zoomDepth >= 2) {
         Executor.click(inCell[0].element);
         this.emitZoomState(cellRect, 'clicked');
         this.zoomStack = [];

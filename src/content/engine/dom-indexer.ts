@@ -201,6 +201,7 @@ export class DomIndexer {
     }
 
     for (const el of candidates) {
+      if (el.closest('[data-engine-ignore]')) continue;
       results.push({ element: el, offset });
     }
 

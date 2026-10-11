@@ -283,6 +283,11 @@ export class Resolver {
         : { status: 'none', matches: [] };
     }
 
+    // If query has no text (e.g. filtered strictly by color/role/side) and exactly 1 candidate matches
+    if ((!query.text || !query.text.trim()) && filtered.length === 1) {
+      return { status: 'one', matches: filtered };
+    }
+
     // Score with fuzzy text matching
     const scored = Resolver.scoreCandidates(filtered, query.text);
 
@@ -320,7 +325,7 @@ export class Resolver {
     if (/\b(delete|remove|erase|clear)\b/.test(norm)) {
       return { reason: 'delete', description: `Delete "${item.label}"` };
     }
-    if (/\b(purchase|buy|pay|order|checkout)\b/.test(norm)) {
+    if (/\b(purchase|buy|pay|place order|checkout)\b/.test(norm)) {
       return { reason: 'purchase', description: `Purchase/Pay: "${item.label}"` };
     }
     if (/\b(sign out|log out|disconnect)\b/.test(norm)) {
