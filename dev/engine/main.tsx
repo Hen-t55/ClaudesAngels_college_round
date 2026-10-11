@@ -14,17 +14,20 @@ import type {
   Rect,
   Scope,
 } from '../../src/shared/contract';
+import type { IndexedElement } from '../../src/content/engine/types';
 
 export function DevHarness() {
   const [activeFixture, setActiveFixture] = useState<
-    'repeated' | 'colors' | 'stacked' | 'form' | 'canvas' | 'iframe' | 'dense' | 'search'
+    'repeated' | 'colors' | 'stacked' | 'form' | 'canvas' | 'iframe' | 'dense' | 'search' | 'checkout'
   >('repeated');
   const [selectedQuadrant, setSelectedQuadrant] = useState<Quadrant | 'ALL'>('ALL');
-  const [commandInput, setCommandInput] = useState('click blue button');
+  const [commandInput, setCommandInput] = useState('');
   const [matches, setMatches] = useState<MatchMeta[]>([]);
+  const [allElements, setAllElements] = useState<IndexedElement[]>([]);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [engineStatus, setEngineStatus] = useState<string>('idle');
   const [lastAction, setLastAction] = useState<string>('');
+  const [pendingConfirmId, setPendingConfirmId] = useState<string | null>(null);
 
   // Zoom overlay state
   const [zoomCells, setZoomCells] = useState<{ n: number; rect: Rect }[]>([]);
@@ -35,6 +38,7 @@ export function DevHarness() {
   const [typeField, setTypeField] = useState('');
 
   const transportRef = useRef<Transport | null>(null);
+  const engineRef = useRef<ReturnType<typeof startEngine> | null>(null);
 
   // Parse natural language or verb+query
   const parseVerbAndQuery = (text: string): { verb: Verb; query: TargetQuery } => {
@@ -98,7 +102,9 @@ export function DevHarness() {
 
   const sendResolve = () => {
     if (!transportRef.current) return;
-    const { verb, query } = parseVerbAndQuery(commandInput);
+    const inputEl = document.querySelector<HTMLInputElement>('input[placeholder*="click blue button"]');
+    const textToParse = inputEl ? inputEl.value : commandInput;
+    const { verb, query } = parseVerbAndQuery(textToParse);
     const scope =
       selectedQuadrant === 'ALL'
         ? { k: 'page' as const }
@@ -111,6 +117,10 @@ export function DevHarness() {
       query,
       scope,
     });
+    if (engineRef.current) {
+      const indexed = (engineRef.current as any).indexer?.index() || [];
+      setAllElements(indexed);
+    }
   };
 
   const sendHop = (dir: Dir) => {
@@ -123,14 +133,16 @@ export function DevHarness() {
   const sendActivate = (matchId?: string) => {
     const targetId = matchId || focusedId || matches[0]?.id;
     if (!targetId || !transportRef.current) return;
-    const { verb } = parseVerbAndQuery(commandInput);
+    const inputEl = document.querySelector<HTMLInputElement>('input[placeholder*="click blue button"]');
+    const textToParse = inputEl ? inputEl.value : commandInput;
+    const { verb } = parseVerbAndQuery(textToParse);
 
     transportRef.current.send('engine.request', {
       t: 'engine.activate',
       id: `act_${Date.now()}`,
       matchId: targetId,
       verb,
-      confirmed: true,
+      confirmed: false,
     });
   };
 
@@ -200,6 +212,28 @@ export function DevHarness() {
     });
   };
 
+  const sendUndo = () => {
+    transportRef.current?.send('engine.request', {
+      t: 'engine.undo',
+    });
+  };
+
+  const sendClear = () => {
+    transportRef.current?.send('engine.request', {
+      t: 'engine.clear',
+    });
+  };
+
+  const sendConfirm = (accept: boolean) => {
+    if (!pendingConfirmId || !transportRef.current) return;
+    transportRef.current.send('engine.request', {
+      t: 'engine.confirm',
+      actionId: pendingConfirmId,
+      accept,
+    });
+    setPendingConfirmId(null);
+  };
+
   useEffect(() => {
     // Set up in-memory transport pairing harness and engine
     const [engineTransport, harnessTransport] = memoryTransport();
@@ -212,9 +246,11 @@ export function DevHarness() {
           setEngineStatus(`${event.status}${event.widened ? ' (widened)' : ''}`);
         } else if (event.t === 'engine.focus') {
           setFocusedId(event.matchId);
+        } else if (event.t === 'engine.confirmNeeded') {
+          setPendingConfirmId(event.actionId);
+          setEngineStatus(`confirm needed (${event.info.reason})`);
         } else if (event.t === 'engine.done') {
           setLastAction(`${event.what} [${event.ok ? 'OK' : 'FAIL'}]`);
-          // Clear zoom overlay on done
           if (event.what === 'zoom_cancelled' || event.ok) {
             setZoomCells([]);
             setZoomRect(null);
@@ -226,7 +262,6 @@ export function DevHarness() {
           setZoomCells(event.cells);
           setEngineStatus(`zoom depth=${event.depth}${event.outcome ? ' [' + event.outcome + ']' : ''}`);
           if (event.outcome === 'clicked' || event.outcome === 'center') {
-            // Clear after short delay so user can see
             setTimeout(() => { setZoomCells([]); setZoomRect(null); }, 800);
           }
         }
@@ -234,8 +269,19 @@ export function DevHarness() {
     ];
 
     const engine = startEngine(engineTransport);
+    engineRef.current = engine;
 
-    const timer = setTimeout(sendResolve, 150);
+    const timer = setTimeout(() => {
+      const inputEl = document.querySelector<HTMLInputElement>('input[placeholder*="click blue button"]');
+      const val = (inputEl ? inputEl.value : commandInput).trim();
+      if (val) {
+        sendResolve();
+      }
+      if (typeof window !== 'undefined') {
+        const indexed = (engine as any).indexer?.index() || [];
+        setAllElements(indexed);
+      }
+    }, 150);
 
     return () => {
       clearTimeout(timer);
@@ -247,11 +293,11 @@ export function DevHarness() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: 'system-ui, sans-serif' }}>
       {/* Top Controls Header */}
-      <div style={{ padding: '12px 16px', background: '#1e293b', color: '#fff', borderBottom: '1px solid #334155' }}>
+      <div data-engine-ignore="true" style={{ padding: '12px 16px', background: '#1e293b', color: '#fff', borderBottom: '1px solid #334155' }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
           <strong style={{ fontSize: 16 }}>🎯 P2 Engine Harness</strong>
           <span style={{ color: '#94a3b8' }}>Fixture:</span>
-          {(['repeated', 'colors', 'stacked', 'form', 'canvas', 'iframe', 'dense', 'search'] as const).map((f) => (
+          {(['repeated', 'colors', 'stacked', 'form', 'canvas', 'iframe', 'dense', 'search', 'checkout'] as const).map((f) => (
             <button
               key={f}
               onClick={() => setActiveFixture(f)}
@@ -384,7 +430,7 @@ export function DevHarness() {
           <span style={{ color: '#94a3b8', fontSize: 11 }}>│ Type:</span>
           <input
             id="type-field-input"
-            type="text"
+            type="search"
             value={typeField}
             onChange={(e) => setTypeField(e.target.value)}
             placeholder="field (optional)"
@@ -392,7 +438,7 @@ export function DevHarness() {
           />
           <input
             id="type-text-input"
-            type="text"
+            type="search"
             value={typeText}
             onChange={(e) => setTypeText(e.target.value)}
             placeholder="text to type"
@@ -419,6 +465,39 @@ export function DevHarness() {
           >
             Search verb
           </button>
+          <button
+            id="btn-undo"
+            onClick={sendUndo}
+            style={{ background: '#64748b', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+          >
+            Undo
+          </button>
+          <button
+            id="btn-clear"
+            onClick={sendClear}
+            style={{ background: '#475569', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+          >
+            Clear
+          </button>
+          {pendingConfirmId && (
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', background: '#fef08a', padding: '2px 6px', borderRadius: 4 }}>
+              <span style={{ fontSize: 11, color: '#854d0e', fontWeight: 600 }}>Confirm?</span>
+              <button
+                id="btn-confirm-yes"
+                onClick={() => sendConfirm(true)}
+                style={{ background: '#16a34a', color: '#fff', border: 'none', padding: '3px 8px', borderRadius: 3, cursor: 'pointer', fontSize: 11 }}
+              >
+                Yes
+              </button>
+              <button
+                id="btn-confirm-no"
+                onClick={() => sendConfirm(false)}
+                style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '3px 8px', borderRadius: 3, cursor: 'pointer', fontSize: 11 }}
+              >
+                No
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -514,23 +593,12 @@ export function DevHarness() {
             <div id="fixture-iframe">
               <iframe
                 id="same-origin-frame"
-                src="about:blank"
-                ref={(iframeEl) => {
-                  if (iframeEl && !iframeEl.dataset.injected) {
-                    iframeEl.dataset.injected = 'true';
-                    setTimeout(() => {
-                      const doc = iframeEl.contentDocument;
-                      if (doc) {
-                        doc.body.innerHTML = `
-                          <div style="font-family: sans-serif; padding: 10px;">
-                            <h4>Nested Frame</h4>
-                            <button id="iframe-btn" style="padding: 8px 16px; background: #8b5cf6; color: white;">Inside Frame Button</button>
-                            <a id="iframe-link" href="#" style="display: block; margin-top: 10px;">Inside Frame Link</a>
-                          </div>
-                        `;
-                        sendResolve();
-                      }
-                    }, 50);
+                srcDoc={`<!DOCTYPE html><html><body style="font-family: sans-serif; padding: 10px;"><h4>Nested Frame</h4><button id="iframe-btn" style="padding: 8px 16px; background: #8b5cf6; color: white;">Inside Frame Button</button><a id="iframe-link" href="#" style="display: block; margin-top: 10px;">Inside Frame Link</a></body></html>`}
+                onLoad={() => {
+                  sendResolve();
+                  if (engineRef.current) {
+                    const indexed = (engineRef.current as any).indexer?.index() || [];
+                    setAllElements(indexed);
                   }
                 }}
                 style={{ width: 350, height: 200, border: '1px solid #94a3b8', borderRadius: 6 }}
@@ -603,6 +671,53 @@ export function DevHarness() {
             </div>
           )}
 
+          {activeFixture === 'checkout' && (
+            <div id="fixture-checkout" style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 420 }}>
+              <h3 style={{ margin: 0, color: '#1e293b' }}>Checkout Fixture</h3>
+              <form
+                id="checkout-form"
+                onSubmit={(e) => {
+                  setLastAction('Order Placed');
+                }}
+                style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+              >
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, fontWeight: 600 }}>
+                  Full Name:
+                  <input
+                    id="checkout-name"
+                    type="text"
+                    defaultValue="John Doe"
+                    style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #94a3b8' }}
+                  />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, fontWeight: 600 }}>
+                  Credit Card:
+                  <input
+                    id="checkout-card"
+                    type="text"
+                    defaultValue="4111 2222 3333 4444"
+                    style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #94a3b8' }}
+                  />
+                </label>
+                <button
+                  id="checkout-submit"
+                  type="submit"
+                  style={{
+                    padding: '12px 20px',
+                    background: '#16a34a',
+                    color: '#fff',
+                    borderRadius: 6,
+                    border: 'none',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Place Order
+                </button>
+              </form>
+            </div>
+          )}
+
           {/* Zoom Grid Overlay */}
           {zoomCells.length > 0 && zoomRect && (
             <div
@@ -672,7 +787,7 @@ export function DevHarness() {
         </div>
 
         {/* Results Sidebar */}
-        <div id="results-sidebar" style={{ width: 380, background: '#fff', borderLeft: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
+        <div id="results-sidebar" data-engine-ignore="true" style={{ width: 380, background: '#fff', borderLeft: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
           <div id="results-header" style={{ padding: '10px 14px', borderBottom: '1px solid #e2e8f0', background: '#f1f5f9' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <strong style={{ fontSize: 13 }}>Matches: {matches.length}</strong>
@@ -685,7 +800,13 @@ export function DevHarness() {
             )}
           </div>
           <div style={{ flex: 1, overflow: 'auto', padding: 8 }}>
-            {matches.map((m) => {
+            {(matches.length > 0 ? matches : allElements.map((el, i) => ({
+              id: el.id,
+              number: i + 1,
+              label: el.label,
+              role: el.role,
+              rect: el.rect,
+            }))).map((m) => {
               const isFocused = m.id === focusedId;
               return (
                 <div
@@ -703,14 +824,15 @@ export function DevHarness() {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                     <span style={{ fontWeight: 'bold', color: '#1e293b' }}>
-                      #{m.number} {m.label || '<em><no label></em>'}
+                      <span>#{m.number} </span>
+                      <span>{m.label || '<em><no label></em>'}</span>
                     </span>
                     {isFocused && (
-                      <span style={{ background: '#22c55e', color: '#fff', borderRadius: 3, padding: '1px 6px', fontSize: 10 }}>FOCUSED</span>
+                      <span data-testid="focused-badge" style={{ background: '#22c55e', color: '#fff', borderRadius: 3, padding: '1px 6px', fontSize: 10 }}>FOCUSED</span>
                     )}
                   </div>
                   <div style={{ color: '#64748b', fontSize: 11 }}>
-                    Role: <code>{m.role}</code> {m.important ? `| ⚠️ ${m.important.reason}` : ''}
+                    Role: <code>{m.role}</code> {(m as any).important ? `| ⚠️ ${(m as any).important.reason}` : ''}
                   </div>
                   <div style={{ color: '#94a3b8', fontSize: 10, marginTop: 2 }}>
                     Rect: {m.rect.x},{m.rect.y} ({m.rect.w}x{m.rect.h})

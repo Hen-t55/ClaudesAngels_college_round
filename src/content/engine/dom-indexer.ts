@@ -201,6 +201,7 @@ export class DomIndexer {
     }
 
     for (const el of candidates) {
+      if (el.closest('[data-engine-ignore]')) continue;
       results.push({ element: el, offset });
     }
 
@@ -317,9 +318,23 @@ export class DomIndexer {
       indexed.push(indexedEl);
     }
 
-    this.cache = indexed;
+    const viewportArea = viewportWidth * viewportHeight;
+    const filtered = indexed.filter((item) => {
+      const tag = item.tagName;
+      if (tag === 'html' || tag === 'body') return false;
+      const area = item.rect.w * item.rect.h;
+      if (viewportArea > 0 && area / viewportArea > 0.6) {
+        const containsOther = indexed.some(
+          (other) => other !== item && item.element.contains(other.element)
+        );
+        if (containsOther) return false;
+      }
+      return true;
+    });
+
+    this.cache = filtered;
     this.lastIndexedTime = Date.now();
-    return indexed;
+    return filtered;
   }
 
   public getCachedIndex(): IndexedElement[] {

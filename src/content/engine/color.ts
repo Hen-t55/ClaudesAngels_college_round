@@ -57,7 +57,8 @@ export function extractColorBucket(element: Element): string | undefined {
     const win = element.ownerDocument?.defaultView || window;
     const style = win.getComputedStyle(element);
 
-    for (const colStr of [style.backgroundColor, style.color, style.borderColor]) {
+    const inlineStyle = element.getAttribute('style') || '';
+    for (const colStr of [style.backgroundColor, style.color, style.borderColor, inlineStyle]) {
       if (!colStr) continue;
       const match = colStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
       if (match) {
